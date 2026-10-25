@@ -3,44 +3,30 @@
   const canvas = document.getElementById('bg-particles');
   const ctx = canvas.getContext('2d');
   let particles = [];
-
-  function resize() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-  }
+  function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
   resize();
   window.addEventListener('resize', resize);
-
-  for (let i = 0; i < 60; i++) {
-    particles.push({
-      x: Math.random() * canvas.width,
-      y: Math.random() * canvas.height,
-      vx: (Math.random() - 0.5) * 0.3,
-      vy: (Math.random() - 0.5) * 0.3,
-      r: Math.random() * 1.5 + 0.5,
-    });
-  }
-
+  for (let i = 0; i < 60; i++) particles.push({
+    x: Math.random() * canvas.width, y: Math.random() * canvas.height,
+    vx: (Math.random() - 0.5) * 0.3, vy: (Math.random() - 0.5) * 0.3,
+    r: Math.random() * 1.5 + 0.5,
+  });
   function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    for (let i = 0; i < particles.length; i++) {
-      for (let j = i + 1; j < particles.length; j++) {
-        const dx = particles[i].x - particles[j].x;
-        const dy = particles[i].y - particles[j].y;
-        const d = Math.sqrt(dx * dx + dy * dy);
-        if (d < 130) {
-          ctx.strokeStyle = `rgba(255, 107, 53, ${0.12 * (1 - d / 130)})`;
-          ctx.lineWidth = 0.6;
-          ctx.beginPath();
-          ctx.moveTo(particles[i].x, particles[i].y);
-          ctx.lineTo(particles[j].x, particles[j].y);
-          ctx.stroke();
-        }
+    for (let i = 0; i < particles.length; i++) for (let j = i + 1; j < particles.length; j++) {
+      const dx = particles[i].x - particles[j].x, dy = particles[i].y - particles[j].y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d < 130) {
+        ctx.strokeStyle = `rgba(255, 107, 53, ${0.12 * (1 - d / 130)})`;
+        ctx.lineWidth = 0.6;
+        ctx.beginPath();
+        ctx.moveTo(particles[i].x, particles[i].y);
+        ctx.lineTo(particles[j].x, particles[j].y);
+        ctx.stroke();
       }
     }
     particles.forEach(p => {
-      p.x += p.vx;
-      p.y += p.vy;
+      p.x += p.vx; p.y += p.vy;
       if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
       if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
       ctx.fillStyle = 'rgba(255, 159, 28, 0.5)';
@@ -56,7 +42,6 @@
 // ═══════════ NAVBAR ═══════════
 const nav = document.getElementById('nav');
 window.addEventListener('scroll', () => nav.classList.toggle('scrolled', window.scrollY > 40), { passive: true });
-
 const menuToggle = document.getElementById('menuToggle');
 const navLinks = document.getElementById('navLinks');
 menuToggle?.addEventListener('click', () => navLinks.classList.toggle('open'));
@@ -64,18 +49,13 @@ navLinks?.querySelectorAll('a').forEach(a => a.addEventListener('click', () => n
 
 // ═══════════ SCROLL REVEAL ═══════════
 const io = new IntersectionObserver((entries) => {
-  entries.forEach(e => {
-    if (e.isIntersecting) {
-      e.target.classList.add('visible');
-      io.unobserve(e.target);
-    }
-  });
+  entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); io.unobserve(e.target); } });
 }, { threshold: 0.08, rootMargin: '0px 0px -60px 0px' });
 document.querySelectorAll('.reveal').forEach(el => io.observe(el));
 
 // ═══════════ SERVICES ═══════════
 const SERVICES = [
-  { id: 'bind-info',     icon: '🔍', title: 'Check Bind Info',      desc: 'View current email, pending email, mobile, and cooldown on the account.' },
+  { id: 'bind-info',     icon: '🔍', title: 'Check Bind Info',      desc: 'View player info, current email, pending email, mobile, and cooldown.' },
   { id: 'bind-email',    icon: '📧', title: 'Bind New Email',       desc: 'Attach a new recovery email using OTP verification.' },
   { id: 'unbind-email',  icon: '🔓', title: 'Unbind Email',         desc: 'Remove the currently bound recovery email.' },
   { id: 'change-email',  icon: '🔄', title: 'Change Bind Email',    desc: 'Migrate the recovery email to a new one.' },
@@ -112,21 +92,12 @@ const modalTitle = document.getElementById('modalTitle');
 const modalSub = document.getElementById('modalSub');
 const modalIcon = document.getElementById('modalIcon');
 const modalBody = document.getElementById('modalBody');
-
 document.getElementById('modalClose').addEventListener('click', closeModal);
-overlay.addEventListener('click', (e) => {
-  if (e.target === overlay) closeModal();
-});
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeModal();
-});
+overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+function closeModal() { overlay.classList.remove('open'); modalBody.innerHTML = ''; }
 
-function closeModal() {
-  overlay.classList.remove('open');
-  modalBody.innerHTML = '';
-}
-
-// ═══════════ ✅ FIXED: API HELPER (handles non-JSON 500 pages) ═══════════
+// ═══════════ API HELPER ═══════════
 async function callApi(action, payload) {
   try {
     const r = await fetch(`/api/handler?action=${encodeURIComponent(action)}`, {
@@ -134,22 +105,12 @@ async function callApi(action, payload) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-
     const text = await r.text();
-
-    if (!text) {
-      return { success: false, error: `Empty response (HTTP ${r.status})` };
-    }
-
-    try {
-      return JSON.parse(text);
-    } catch {
-      // Server returned HTML (e.g. Vercel error page) — surface a clean message
+    if (!text) return { success: false, error: `Empty response (HTTP ${r.status})` };
+    try { return JSON.parse(text); }
+    catch {
       const clean = text.replace(/<[^>]+>/g, '').trim().slice(0, 200);
-      return {
-        success: false,
-        error: `Server error (HTTP ${r.status})${clean ? ': ' + clean : ''}`,
-      };
+      return { success: false, error: `Server error (HTTP ${r.status})${clean ? ': ' + clean : ''}` };
     }
   } catch (err) {
     return { success: false, error: `Network error: ${err.message}` };
@@ -160,14 +121,20 @@ async function callApi(action, payload) {
 function field(id, label, type = 'text', placeholder = '') {
   return `<div class="field"><label>${label}</label><input id="${id}" type="${type}" placeholder="${placeholder}" autocomplete="off" /></div>`;
 }
-function submitBtn(text = 'Submit') {
-  return `<button class="btn-primary" id="submitBtn">${text}</button>`;
-}
-function loading() {
-  return `<div class="loading">Processing…</div>`;
-}
-function resultPanel(html, isError = false) {
-  return `<div class="result ${isError ? 'error' : 'success'}">${html}</div>`;
+function submitBtn(text = 'Submit') { return `<button class="btn-primary" id="submitBtn">${text}</button>`; }
+function loading() { return `<div class="loading">Processing…</div>`; }
+function resultPanel(html, isError = false) { return `<div class="result ${isError ? 'error' : 'success'}">${html}</div>`; }
+
+// ✅ Player card helper
+function playerCard(p) {
+  if (!p) return '';
+  return `
+    <div class="player-card">
+      <div class="player-header">Player Information</div>
+      <div class="player-row"><span>UID</span><span>${p.uid || 'Unknown'}</span></div>
+      <div class="player-row"><span>Nickname</span><span>${p.nickname || 'Unknown'}</span></div>
+      <div class="player-row"><span>Region</span><span>${p.region || 'Unknown'}</span></div>
+    </div>`;
 }
 
 // ═══════════ OPEN SERVICE ═══════════
@@ -184,6 +151,7 @@ function openService(id) {
 // ═══════════ HANDLERS ═══════════
 const HANDLERS = {
 
+  // ── 1. Bind Info ──
   'bind-info': {
     render() {
       modalBody.innerHTML = `${field('token', 'Access Token', 'text', 'Paste your access token')}${submitBtn('Check Bind Info')}<div id="output"></div>`;
@@ -193,25 +161,29 @@ const HANDLERS = {
         const out = document.getElementById('output');
         out.innerHTML = loading();
         const r = await callApi('bind-info', { access_token: token });
-        if (!r.success) return out.innerHTML = resultPanel(r.error || 'Failed', true);
-        const d = r.data;
+        if (!r.success && !r.data) return out.innerHTML = resultPanel(r.error || 'Failed', true);
+        const d = r.data || {};
         out.innerHTML = resultPanel(`
+          ${playerCard(r.player)}
           <div class="kv"><span>Current Email</span><span>${d.current_email || 'None'}</span></div>
           <div class="kv"><span>Pending Email</span><span>${d.pending_email || 'None'}</span></div>
           <div class="kv"><span>Current Mobile</span><span>${d.mobile || 'None'}</span></div>
           <div class="kv"><span>Pending Mobile</span><span>${d.pending_mobile || 'None'}</span></div>
-          <div class="kv"><span>Cooldown</span><span>${d.cooldown_seconds} sec</span></div>
+          <div class="kv"><span>Cooldown</span><span>${d.cooldown_human || '0 Sec'}</span></div>
           <div class="kv"><span>Status</span><span style="color:var(--emerald)">✓ Success</span></div>`);
       };
     },
   },
 
+  // ── 2. Bind Email ──
   'bind-email': {
     render() {
       const state = {};
       let step = 1;
       const draw = () => {
+        const playerHtml = state.player ? playerCard(state.player) : '';
         modalBody.innerHTML = `
+          ${playerHtml}
           <div class="step-indicator">${[1,2,3].map(n => `<div class="step-dot ${n===step?'active':n<step?'done':''}"></div>`).join('')}</div>
           <div id="stepBody"></div><div id="output"></div>`;
         const sb = document.getElementById('stepBody');
@@ -221,7 +193,19 @@ const HANDLERS = {
             state.access_token = document.getElementById('token').value.trim();
             state.email = document.getElementById('email').value.trim();
             if (!state.access_token || !state.email) return;
+
             document.getElementById('output').innerHTML = loading();
+
+            // ✅ Fetch player info first
+            const pInfo = await callApi('player-info', { access_token: state.access_token });
+            if (pInfo.success) {
+              state.player = pInfo.data;
+              draw(); // Redraw to show player card
+            }
+
+            document.getElementById('output').innerHTML = loading();
+
+            // Then send OTP
             const r = await callApi('send-otp', { access_token: state.access_token, email: state.email });
             if (!r.success) return document.getElementById('output').innerHTML = resultPanel(r.error || 'Failed to send OTP', true);
             step = 2;
@@ -246,15 +230,8 @@ const HANDLERS = {
             const code = document.getElementById('code').value.trim();
             if (!code) return;
             document.getElementById('output').innerHTML = loading();
-            const r = await callApi('create-bind', {
-              access_token: state.access_token,
-              email: state.email,
-              verifier_token: state.verifier_token,
-              security_code: code,
-            });
-            document.getElementById('output').innerHTML = r.success
-              ? resultPanel('✅ Email bound successfully!')
-              : resultPanel(r.error || 'Bind failed', true);
+            const r = await callApi('create-bind', { access_token: state.access_token, email: state.email, verifier_token: state.verifier_token, security_code: code });
+            document.getElementById('output').innerHTML = r.success ? resultPanel('✅ Email bound successfully!') : resultPanel(r.error || 'Bind failed', true);
           };
         }
       };
@@ -262,12 +239,15 @@ const HANDLERS = {
     },
   },
 
+  // ── 3. Unbind Email ──
   'unbind-email': {
     render() {
       const state = {};
       let step = 1;
       const draw = () => {
+        const playerHtml = state.player ? playerCard(state.player) : '';
         modalBody.innerHTML = `
+          ${playerHtml}
           <div class="step-indicator">${[1,2,3].map(n => `<div class="step-dot ${n===step?'active':n<step?'done':''}"></div>`).join('')}</div>
           <div id="stepBody"></div><div id="output"></div>`;
         const sb = document.getElementById('stepBody');
@@ -277,7 +257,14 @@ const HANDLERS = {
             state.access_token = document.getElementById('token').value.trim();
             state.email = document.getElementById('email').value.trim();
             if (!state.access_token || !state.email) return;
+
             document.getElementById('output').innerHTML = loading();
+
+            const pInfo = await callApi('player-info', { access_token: state.access_token });
+            if (pInfo.success) { state.player = pInfo.data; draw(); }
+
+            document.getElementById('output').innerHTML = loading();
+
             const r = await callApi('send-otp', { access_token: state.access_token, email: state.email });
             if (!r.success) return document.getElementById('output').innerHTML = resultPanel(r.error || 'Failed', true);
             step = 2;
@@ -301,9 +288,7 @@ const HANDLERS = {
           document.getElementById('submitBtn').onclick = async () => {
             document.getElementById('output').innerHTML = loading();
             const r = await callApi('create-unbind', { access_token: state.access_token, identity_token: state.identity_token });
-            document.getElementById('output').innerHTML = r.success
-              ? resultPanel('✅ Email unbound successfully!')
-              : resultPanel(r.error || 'Unbind failed', true);
+            document.getElementById('output').innerHTML = r.success ? resultPanel('✅ Email unbound successfully!') : resultPanel(r.error || 'Unbind failed', true);
           };
         }
       };
@@ -311,12 +296,15 @@ const HANDLERS = {
     },
   },
 
+  // ── 4. Change Email ──
   'change-email': {
     render() {
       const state = {};
       let step = 1;
       const draw = () => {
+        const playerHtml = state.player ? playerCard(state.player) : '';
         modalBody.innerHTML = `
+          ${playerHtml}
           <div class="step-indicator">${[1,2,3,4,5].map(n => `<div class="step-dot ${n===step?'active':n<step?'done':''}"></div>`).join('')}</div>
           <div id="stepBody"></div><div id="output"></div>`;
         const sb = document.getElementById('stepBody');
@@ -326,7 +314,14 @@ const HANDLERS = {
             state.access_token = document.getElementById('token').value.trim();
             state.old_email = document.getElementById('email').value.trim();
             if (!state.access_token || !state.old_email) return;
+
             document.getElementById('output').innerHTML = loading();
+
+            const pInfo = await callApi('player-info', { access_token: state.access_token });
+            if (pInfo.success) { state.player = pInfo.data; draw(); }
+
+            document.getElementById('output').innerHTML = loading();
+
             const r = await callApi('send-otp', { access_token: state.access_token, email: state.old_email });
             if (!r.success) return document.getElementById('output').innerHTML = resultPanel(r.error || 'Failed', true);
             step = 2;
@@ -373,15 +368,8 @@ const HANDLERS = {
           sb.innerHTML = `${submitBtn('Complete Change')}`;
           document.getElementById('submitBtn').onclick = async () => {
             document.getElementById('output').innerHTML = loading();
-            const r = await callApi('create-rebind', {
-              access_token: state.access_token,
-              email: state.new_email,
-              identity_token: state.identity_token,
-              verifier_token: state.verifier_token,
-            });
-            document.getElementById('output').innerHTML = r.success
-              ? resultPanel('✅ Email changed successfully!')
-              : resultPanel(r.error || 'Failed', true);
+            const r = await callApi('create-rebind', { access_token: state.access_token, email: state.new_email, identity_token: state.identity_token, verifier_token: state.verifier_token });
+            document.getElementById('output').innerHTML = r.success ? resultPanel('✅ Email changed successfully!') : resultPanel(r.error || 'Failed', true);
           };
         }
       };
@@ -389,6 +377,7 @@ const HANDLERS = {
     },
   },
 
+  // ── 5. Cancel Pending ──
   'cancel-bind': {
     render() {
       modalBody.innerHTML = `${field('token','Access Token')}${submitBtn('Cancel Pending Request')}<div id="output"></div>`;
@@ -398,13 +387,16 @@ const HANDLERS = {
         const out = document.getElementById('output');
         out.innerHTML = loading();
         const r = await callApi('cancel-bind', { access_token: token });
-        out.innerHTML = r.success
-          ? resultPanel('✅ Pending request cancelled!')
-          : resultPanel(r.error || 'Failed', true);
+        let html = '';
+        if (r.player) html += playerCard(r.player);
+        if (r.success) html += `<div style="color:var(--emerald);font-weight:600">✅ Pending request cancelled!</div>`;
+        else html += `<div style="color:var(--crimson);font-weight:600">${r.error || 'Failed'}</div>`;
+        out.innerHTML = resultPanel(html);
       };
     },
   },
 
+  // ── 6. EAT → Token ──
   'eat-token': {
     render() {
       modalBody.innerHTML = `${field('eat','EAT Token or Full URL','text','Paste EAT token or URL')}${submitBtn('Convert to Access Token')}<div id="output"></div>`;
@@ -413,24 +405,20 @@ const HANDLERS = {
         if (!input) return;
         let eat = input;
         if (input.includes('http') || input.includes('?')) {
-          try {
-            const u = new URL(input);
-            eat = u.searchParams.get('eat') || input;
-          } catch {}
+          try { const u = new URL(input); eat = u.searchParams.get('eat') || input; } catch {}
         }
         const out = document.getElementById('output');
         out.innerHTML = loading();
         const r = await callApi('eat-token', { eat_token: eat });
         if (!r.success) return out.innerHTML = resultPanel(r.error || 'Failed', true);
         out.innerHTML = resultPanel(`
-          <div class="kv"><span>Nickname</span><span>${r.data.nickname || '-'}</span></div>
-          <div class="kv"><span>Account ID</span><span>${r.data.account_id || '-'}</span></div>
-          <div class="kv"><span>Region</span><span>${r.data.region || '-'}</span></div>
+          ${playerCard({ uid: r.data.account_id, nickname: r.data.nickname, region: r.data.region })}
           <div class="kv"><span>Access Token</span><span style="font-size:11px">${r.data.access_token}</span></div>`);
       };
     },
   },
 
+  // ── 7. Revoke Token ──
   'revoke-token': {
     render() {
       modalBody.innerHTML = `${field('token','Access Token to Revoke')}${submitBtn('Revoke Token')}<div id="output"></div>`;
@@ -440,13 +428,16 @@ const HANDLERS = {
         const out = document.getElementById('output');
         out.innerHTML = loading();
         const r = await callApi('revoke-token', { access_token: token });
-        out.innerHTML = r.success
-          ? resultPanel('✅ Token revoked successfully!')
-          : resultPanel(r.error || r.message || 'Failed', true);
+        let html = '';
+        if (r.player) html += playerCard(r.player);
+        if (r.success) html += `<div style="color:var(--emerald);font-weight:600">✅ Token revoked successfully!</div>`;
+        else html += `<div style="color:var(--crimson);font-weight:600">${r.error || r.message || 'Failed'}</div>`;
+        out.innerHTML = resultPanel(html);
       };
     },
   },
 
+  // ── 8. Login History ──
   'login-history': {
     render() {
       modalBody.innerHTML = `${field('token','JWT Token','text','Use "Access → JWT" if needed')}${submitBtn('Fetch Login History')}<div id="output"></div>`;
@@ -459,9 +450,7 @@ const HANDLERS = {
         if (!r.success) return out.innerHTML = resultPanel(r.error || 'Failed', true);
         const d = r.data;
         let html = `
-          <div class="kv"><span>Nickname</span><span>${d.nickname}</span></div>
-          <div class="kv"><span>Account ID</span><span>${d.account_id}</span></div>
-          <div class="kv"><span>Region</span><span>${d.region}</span></div>
+          ${playerCard({ uid: d.account_id, nickname: d.nickname, region: d.region })}
           <div class="kv"><span>Suspicious Logins</span><span>${d.suspicious_count}</span></div>
           <div style="margin-top:18px">`;
         d.entries.forEach(e => {
@@ -481,6 +470,7 @@ const HANDLERS = {
     },
   },
 
+  // ── 9. Platform Info ──
   'platform-info': {
     render() {
       modalBody.innerHTML = `${field('token','Access Token')}${submitBtn('Check Platforms')}<div id="output"></div>`;
@@ -501,6 +491,7 @@ const HANDLERS = {
     },
   },
 
+  // ── 10. Access → JWT ──
   'to-jwt': {
     render() {
       modalBody.innerHTML = `${field('token','Access Token')}${submitBtn('Generate JWT')}<div id="output"></div>`;
@@ -513,10 +504,9 @@ const HANDLERS = {
         if (!r.success) return out.innerHTML = resultPanel(r.error || 'Failed', true);
         const d = r.data;
         out.innerHTML = resultPanel(`
-          <div class="kv"><span>Nickname</span><span>${d.nickname || '-'}</span></div>
-          <div class="kv"><span>Account ID</span><span>${d.account_id || '-'}</span></div>
+          ${playerCard({ uid: d.account_id, nickname: d.nickname, region: d.region })}
           <div class="kv"><span>UID</span><span>${d.uid || '-'}</span></div>
-          <div class="kv"><span>Region</span><span>${d.region || '-'}</span></div>
+          <div class="kv"><span>Platform ID</span><span>${d.platform_id || '-'}</span></div>
           <div style="margin-top:14px"><strong>JWT Token:</strong></div>
           <pre>${d.token}</pre>`);
       };
