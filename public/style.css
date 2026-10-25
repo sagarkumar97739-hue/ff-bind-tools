@@ -447,3 +447,21 @@ footer { background: var(--bg-2); border-top: 1px solid var(--border); padding: 
 }
 .player-row span:first-child { color: var(--muted); flex-shrink: 0; }
 .player-row span:last-child { color: var(--text); font-weight: 600; text-align: right; word-break: break-all; }
+
+/* ═══════════ INVALID INPUT SHAKE ═══════════ */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(8px); }
+  60% { transform: translateX(-6px); }
+  80% { transform: translateX(6px); }
+}
+.field input.invalid {
+  animation: shake 0.45s ease;
+  border-color: var(--crimson) !important;
+  background: rgba(239, 68, 68, 0.05) !important;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2) !important;
+}
+.field input.invalid::placeholder {
+  color: var(--crimson);
+}

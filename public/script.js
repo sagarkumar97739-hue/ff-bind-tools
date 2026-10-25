@@ -97,13 +97,16 @@ overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 function closeModal() { overlay.classList.remove('open'); modalBody.innerHTML = ''; }
 
-// ═══════════ API HELPER ═══════════
+// ═══════════ ✅ API HELPER with 60s TIMEOUT ═══════════
 async function callApi(action, payload) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000);
   try {
     const r = await fetch(`/api/handler?action=${encodeURIComponent(action)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      signal: controller.signal,
     });
     const text = await r.text();
     if (!text) return { success: false, error: `Empty response (HTTP ${r.status})` };
@@ -113,7 +116,10 @@ async function callApi(action, payload) {
       return { success: false, error: `Server error (HTTP ${r.status})${clean ? ': ' + clean : ''}` };
     }
   } catch (err) {
+    if (err.name === 'AbortError') return { success: false, error: '⏱ Request timed out after 60 seconds. Please try again.' };
     return { success: false, error: `Network error: ${err.message}` };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -125,7 +131,26 @@ function submitBtn(text = 'Submit') { return `<button class="btn-primary" id="su
 function loading() { return `<div class="loading">Processing…</div>`; }
 function resultPanel(html, isError = false) { return `<div class="result ${isError ? 'error' : 'success'}">${html}</div>`; }
 
-// ✅ Player card helper
+// ✅ NEW: Validation helper — shakes empty inputs
+function validateInputs(ids) {
+  let allValid = true;
+  let firstInvalid = null;
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (!el.value.trim()) {
+      el.classList.remove('invalid');
+      void el.offsetWidth; // force reflow to replay animation
+      el.classList.add('invalid');
+      if (!firstInvalid) firstInvalid = el;
+      allValid = false;
+      setTimeout(() => el.classList.remove('invalid'), 600);
+    }
+  });
+  if (firstInvalid) firstInvalid.focus();
+  return allValid;
+}
+
 function playerCard(p) {
   if (!p) return '';
   return `
@@ -135,6 +160,13 @@ function playerCard(p) {
       <div class="player-row"><span>Nickname</span><span>${p.nickname || 'Unknown'}</span></div>
       <div class="player-row"><span>Region</span><span>${p.region || 'Unknown'}</span></div>
     </div>`;
+}
+
+function stepDots(current, total) {
+  return `<div class="step-indicator">${Array.from({ length: total }, (_, i) => {
+    const n = i + 1;
+    return `<div class="step-dot ${n === current ? 'active' : n < current ? 'done' : ''}"></div>`;
+  }).join('')}</div>`;
 }
 
 // ═══════════ OPEN SERVICE ═══════════
@@ -156,8 +188,8 @@ const HANDLERS = {
     render() {
       modalBody.innerHTML = `${field('token', 'Access Token', 'text', 'Paste your access token')}${submitBtn('Check Bind Info')}<div id="output"></div>`;
       document.getElementById('submitBtn').onclick = async () => {
+        if (!validateInputs(['token'])) return;
         const token = document.getElementById('token').value.trim();
-        if (!token) return;
         const out = document.getElementById('output');
         out.innerHTML = loading();
         const r = await callApi('bind-info', { access_token: token });
@@ -175,63 +207,67 @@ const HANDLERS = {
     },
   },
 
-  // ── 2. Bind Email ──
+  // ── 2. Bind Email (Token → Player → Email → OTP → Complete) ──
   'bind-email': {
     render() {
       const state = {};
       let step = 1;
+      const TOTAL = 4;
       const draw = () => {
-        const playerHtml = state.player ? playerCard(state.player) : '';
         modalBody.innerHTML = `
-          ${playerHtml}
-          <div class="step-indicator">${[1,2,3].map(n => `<div class="step-dot ${n===step?'active':n<step?'done':''}"></div>`).join('')}</div>
+          ${state.player ? playerCard(state.player) : ''}
+          ${stepDots(step, TOTAL)}
           <div id="stepBody"></div><div id="output"></div>`;
         const sb = document.getElementById('stepBody');
+
         if (step === 1) {
-          sb.innerHTML = `${field('token','Access Token')}${field('email','New Email','email')}${submitBtn('Send OTP')}`;
+          sb.innerHTML = `${field('token', 'Access Token', 'text', 'Paste your access token')}${submitBtn('Load Player Info')}`;
           document.getElementById('submitBtn').onclick = async () => {
+            if (!validateInputs(['token'])) return;
             state.access_token = document.getElementById('token').value.trim();
-            state.email = document.getElementById('email').value.trim();
-            if (!state.access_token || !state.email) return;
-
-            document.getElementById('output').innerHTML = loading();
-
-            // ✅ Fetch player info first
+            const out = document.getElementById('output');
+            out.innerHTML = loading();
             const pInfo = await callApi('player-info', { access_token: state.access_token });
-            if (pInfo.success) {
-              state.player = pInfo.data;
-              draw(); // Redraw to show player card
-            }
-
-            document.getElementById('output').innerHTML = loading();
-
-            // Then send OTP
-            const r = await callApi('send-otp', { access_token: state.access_token, email: state.email });
-            if (!r.success) return document.getElementById('output').innerHTML = resultPanel(r.error || 'Failed to send OTP', true);
+            if (!pInfo.success) return out.innerHTML = resultPanel(pInfo.error || 'Failed to load player info', true);
+            state.player = pInfo.data;
             step = 2;
             draw();
           };
         } else if (step === 2) {
-          sb.innerHTML = `${field('otp','OTP Code (from email)','text','6-digit code')}${submitBtn('Verify OTP')}`;
+          sb.innerHTML = `${field('email', 'New Email', 'email', 'Enter new recovery email')}${submitBtn('Send OTP')}`;
           document.getElementById('submitBtn').onclick = async () => {
-            const otp = document.getElementById('otp').value.trim();
-            if (!otp) return;
-            document.getElementById('output').innerHTML = loading();
-            const r = await callApi('verify-otp', { access_token: state.access_token, email: state.email, otp });
-            if (!r.success) return document.getElementById('output').innerHTML = resultPanel(r.error || 'Invalid OTP', true);
-            state.verifier_token = r.data.verifier_token || '';
-            if (!state.verifier_token) return document.getElementById('output').innerHTML = resultPanel('Verifier token not returned', true);
+            if (!validateInputs(['email'])) return;
+            state.email = document.getElementById('email').value.trim();
+            const out = document.getElementById('output');
+            out.innerHTML = loading();
+            const r = await callApi('send-otp', { access_token: state.access_token, email: state.email });
+            if (!r.success) return out.innerHTML = resultPanel(r.error || 'Failed to send OTP', true);
             step = 3;
             draw();
           };
-        } else {
-          sb.innerHTML = `${field('code','Security Code (6 digits)','password')}${submitBtn('Complete Bind')}`;
+        } else if (step === 3) {
+          sb.innerHTML = `${field('otp', 'OTP Code (from email)', 'text', '6-digit code')}${submitBtn('Verify OTP')}`;
           document.getElementById('submitBtn').onclick = async () => {
+            if (!validateInputs(['otp'])) return;
+            const otp = document.getElementById('otp').value.trim();
+            const out = document.getElementById('output');
+            out.innerHTML = loading();
+            const r = await callApi('verify-otp', { access_token: state.access_token, email: state.email, otp });
+            if (!r.success) return out.innerHTML = resultPanel(r.error || 'Invalid OTP', true);
+            state.verifier_token = r.data.verifier_token || '';
+            if (!state.verifier_token) return out.innerHTML = resultPanel('Verifier token not returned', true);
+            step = 4;
+            draw();
+          };
+        } else {
+          sb.innerHTML = `${field('code', 'Security Code (6 digits)', 'password', 'Set your security code')}${submitBtn('Complete Bind')}`;
+          document.getElementById('submitBtn').onclick = async () => {
+            if (!validateInputs(['code'])) return;
             const code = document.getElementById('code').value.trim();
-            if (!code) return;
-            document.getElementById('output').innerHTML = loading();
+            const out = document.getElementById('output');
+            out.innerHTML = loading();
             const r = await callApi('create-bind', { access_token: state.access_token, email: state.email, verifier_token: state.verifier_token, security_code: code });
-            document.getElementById('output').innerHTML = r.success ? resultPanel('✅ Email bound successfully!') : resultPanel(r.error || 'Bind failed', true);
+            out.innerHTML = r.success ? resultPanel('✅ Email bound successfully!') : resultPanel(r.error || 'Bind failed', true);
           };
         }
       };
@@ -239,56 +275,65 @@ const HANDLERS = {
     },
   },
 
-  // ── 3. Unbind Email ──
+  // ── 3. Unbind Email (Token → Player → Email → OTP → Complete) ──
   'unbind-email': {
     render() {
       const state = {};
       let step = 1;
+      const TOTAL = 4;
       const draw = () => {
-        const playerHtml = state.player ? playerCard(state.player) : '';
         modalBody.innerHTML = `
-          ${playerHtml}
-          <div class="step-indicator">${[1,2,3].map(n => `<div class="step-dot ${n===step?'active':n<step?'done':''}"></div>`).join('')}</div>
+          ${state.player ? playerCard(state.player) : ''}
+          ${stepDots(step, TOTAL)}
           <div id="stepBody"></div><div id="output"></div>`;
         const sb = document.getElementById('stepBody');
+
         if (step === 1) {
-          sb.innerHTML = `${field('token','Access Token')}${field('email','Bound Email','email')}${submitBtn('Send OTP')}`;
+          sb.innerHTML = `${field('token', 'Access Token', 'text', 'Paste your access token')}${submitBtn('Load Player Info')}`;
           document.getElementById('submitBtn').onclick = async () => {
+            if (!validateInputs(['token'])) return;
             state.access_token = document.getElementById('token').value.trim();
-            state.email = document.getElementById('email').value.trim();
-            if (!state.access_token || !state.email) return;
-
-            document.getElementById('output').innerHTML = loading();
-
+            const out = document.getElementById('output');
+            out.innerHTML = loading();
             const pInfo = await callApi('player-info', { access_token: state.access_token });
-            if (pInfo.success) { state.player = pInfo.data; draw(); }
-
-            document.getElementById('output').innerHTML = loading();
-
-            const r = await callApi('send-otp', { access_token: state.access_token, email: state.email });
-            if (!r.success) return document.getElementById('output').innerHTML = resultPanel(r.error || 'Failed', true);
+            if (!pInfo.success) return out.innerHTML = resultPanel(pInfo.error || 'Failed to load player info', true);
+            state.player = pInfo.data;
             step = 2;
             draw();
           };
         } else if (step === 2) {
-          sb.innerHTML = `${field('otp','OTP Code','text','From bound email')}${submitBtn('Verify Identity')}`;
+          sb.innerHTML = `${field('email', 'Bound Email', 'email', 'Enter bound email address')}${submitBtn('Send OTP')}`;
           document.getElementById('submitBtn').onclick = async () => {
-            const otp = document.getElementById('otp').value.trim();
-            if (!otp) return;
-            document.getElementById('output').innerHTML = loading();
-            const r = await callApi('verify-identity', { access_token: state.access_token, email: state.email, otp });
-            if (!r.success) return document.getElementById('output').innerHTML = resultPanel(r.error || 'Failed', true);
-            state.identity_token = r.data.identity_token || '';
-            if (!state.identity_token) return document.getElementById('output').innerHTML = resultPanel('No identity token', true);
+            if (!validateInputs(['email'])) return;
+            state.email = document.getElementById('email').value.trim();
+            const out = document.getElementById('output');
+            out.innerHTML = loading();
+            const r = await callApi('send-otp', { access_token: state.access_token, email: state.email });
+            if (!r.success) return out.innerHTML = resultPanel(r.error || 'Failed to send OTP', true);
             step = 3;
+            draw();
+          };
+        } else if (step === 3) {
+          sb.innerHTML = `${field('otp', 'OTP Code', 'text', 'From bound email')}${submitBtn('Verify Identity')}`;
+          document.getElementById('submitBtn').onclick = async () => {
+            if (!validateInputs(['otp'])) return;
+            const otp = document.getElementById('otp').value.trim();
+            const out = document.getElementById('output');
+            out.innerHTML = loading();
+            const r = await callApi('verify-identity', { access_token: state.access_token, email: state.email, otp });
+            if (!r.success) return out.innerHTML = resultPanel(r.error || 'Verification failed', true);
+            state.identity_token = r.data.identity_token || '';
+            if (!state.identity_token) return out.innerHTML = resultPanel('No identity token returned', true);
+            step = 4;
             draw();
           };
         } else {
           sb.innerHTML = `${submitBtn('Complete Unbind')}`;
           document.getElementById('submitBtn').onclick = async () => {
-            document.getElementById('output').innerHTML = loading();
+            const out = document.getElementById('output');
+            out.innerHTML = loading();
             const r = await callApi('create-unbind', { access_token: state.access_token, identity_token: state.identity_token });
-            document.getElementById('output').innerHTML = r.success ? resultPanel('✅ Email unbound successfully!') : resultPanel(r.error || 'Unbind failed', true);
+            out.innerHTML = r.success ? resultPanel('✅ Email unbound successfully!') : resultPanel(r.error || 'Unbind failed', true);
           };
         }
       };
@@ -296,80 +341,91 @@ const HANDLERS = {
     },
   },
 
-  // ── 4. Change Email ──
+  // ── 4. Change Email (Token → Player → Old Email → OTP → New Email → OTP → Complete) ──
   'change-email': {
     render() {
       const state = {};
       let step = 1;
+      const TOTAL = 6;
       const draw = () => {
-        const playerHtml = state.player ? playerCard(state.player) : '';
         modalBody.innerHTML = `
-          ${playerHtml}
-          <div class="step-indicator">${[1,2,3,4,5].map(n => `<div class="step-dot ${n===step?'active':n<step?'done':''}"></div>`).join('')}</div>
+          ${state.player ? playerCard(state.player) : ''}
+          ${stepDots(step, TOTAL)}
           <div id="stepBody"></div><div id="output"></div>`;
         const sb = document.getElementById('stepBody');
+
         if (step === 1) {
-          sb.innerHTML = `${field('token','Access Token')}${field('email','Current Bound Email','email')}${submitBtn('Send OTP to Old Email')}`;
+          sb.innerHTML = `${field('token', 'Access Token', 'text', 'Paste your access token')}${submitBtn('Load Player Info')}`;
           document.getElementById('submitBtn').onclick = async () => {
+            if (!validateInputs(['token'])) return;
             state.access_token = document.getElementById('token').value.trim();
-            state.old_email = document.getElementById('email').value.trim();
-            if (!state.access_token || !state.old_email) return;
-
-            document.getElementById('output').innerHTML = loading();
-
+            const out = document.getElementById('output');
+            out.innerHTML = loading();
             const pInfo = await callApi('player-info', { access_token: state.access_token });
-            if (pInfo.success) { state.player = pInfo.data; draw(); }
-
-            document.getElementById('output').innerHTML = loading();
-
-            const r = await callApi('send-otp', { access_token: state.access_token, email: state.old_email });
-            if (!r.success) return document.getElementById('output').innerHTML = resultPanel(r.error || 'Failed', true);
+            if (!pInfo.success) return out.innerHTML = resultPanel(pInfo.error || 'Failed to load player info', true);
+            state.player = pInfo.data;
             step = 2;
             draw();
           };
         } else if (step === 2) {
-          sb.innerHTML = `${field('otp','OTP from OLD email')}${submitBtn('Verify Identity')}`;
+          sb.innerHTML = `${field('email', 'Current Bound Email', 'email', 'Enter current email')}${submitBtn('Send OTP to Old Email')}`;
           document.getElementById('submitBtn').onclick = async () => {
-            const otp = document.getElementById('otp').value.trim();
-            if (!otp) return;
-            document.getElementById('output').innerHTML = loading();
-            const r = await callApi('verify-identity', { access_token: state.access_token, email: state.old_email, otp });
-            if (!r.success) return document.getElementById('output').innerHTML = resultPanel(r.error || 'Failed', true);
-            state.identity_token = r.data.identity_token || '';
-            if (!state.identity_token) return document.getElementById('output').innerHTML = resultPanel('No identity token', true);
+            if (!validateInputs(['email'])) return;
+            state.old_email = document.getElementById('email').value.trim();
+            const out = document.getElementById('output');
+            out.innerHTML = loading();
+            const r = await callApi('send-otp', { access_token: state.access_token, email: state.old_email });
+            if (!r.success) return out.innerHTML = resultPanel(r.error || 'Failed to send OTP', true);
             step = 3;
             draw();
           };
         } else if (step === 3) {
-          sb.innerHTML = `${field('new_email','New Email','email')}${submitBtn('Send OTP to New Email')}`;
+          sb.innerHTML = `${field('otp', 'OTP from OLD email', 'text', '6-digit code')}${submitBtn('Verify Identity')}`;
           document.getElementById('submitBtn').onclick = async () => {
-            state.new_email = document.getElementById('new_email').value.trim();
-            if (!state.new_email) return;
-            document.getElementById('output').innerHTML = loading();
-            const r = await callApi('send-otp', { access_token: state.access_token, email: state.new_email });
-            if (!r.success) return document.getElementById('output').innerHTML = resultPanel(r.error || 'Failed', true);
+            if (!validateInputs(['otp'])) return;
+            const otp = document.getElementById('otp').value.trim();
+            const out = document.getElementById('output');
+            out.innerHTML = loading();
+            const r = await callApi('verify-identity', { access_token: state.access_token, email: state.old_email, otp });
+            if (!r.success) return out.innerHTML = resultPanel(r.error || 'Verification failed', true);
+            state.identity_token = r.data.identity_token || '';
+            if (!state.identity_token) return out.innerHTML = resultPanel('No identity token returned', true);
             step = 4;
             draw();
           };
         } else if (step === 4) {
-          sb.innerHTML = `${field('otp_new','OTP from NEW email')}${submitBtn('Verify New OTP')}`;
+          sb.innerHTML = `${field('new_email', 'New Email', 'email', 'Enter new email')}${submitBtn('Send OTP to New Email')}`;
           document.getElementById('submitBtn').onclick = async () => {
-            const otp = document.getElementById('otp_new').value.trim();
-            if (!otp) return;
-            document.getElementById('output').innerHTML = loading();
-            const r = await callApi('verify-otp', { access_token: state.access_token, email: state.new_email, otp });
-            if (!r.success) return document.getElementById('output').innerHTML = resultPanel(r.error || 'Failed', true);
-            state.verifier_token = r.data.verifier_token || '';
-            if (!state.verifier_token) return document.getElementById('output').innerHTML = resultPanel('No verifier token', true);
+            if (!validateInputs(['new_email'])) return;
+            state.new_email = document.getElementById('new_email').value.trim();
+            const out = document.getElementById('output');
+            out.innerHTML = loading();
+            const r = await callApi('send-otp', { access_token: state.access_token, email: state.new_email });
+            if (!r.success) return out.innerHTML = resultPanel(r.error || 'Failed to send OTP', true);
             step = 5;
+            draw();
+          };
+        } else if (step === 5) {
+          sb.innerHTML = `${field('otp_new', 'OTP from NEW email', 'text', '6-digit code')}${submitBtn('Verify New OTP')}`;
+          document.getElementById('submitBtn').onclick = async () => {
+            if (!validateInputs(['otp_new'])) return;
+            const otp = document.getElementById('otp_new').value.trim();
+            const out = document.getElementById('output');
+            out.innerHTML = loading();
+            const r = await callApi('verify-otp', { access_token: state.access_token, email: state.new_email, otp });
+            if (!r.success) return out.innerHTML = resultPanel(r.error || 'Invalid OTP', true);
+            state.verifier_token = r.data.verifier_token || '';
+            if (!state.verifier_token) return out.innerHTML = resultPanel('No verifier token returned', true);
+            step = 6;
             draw();
           };
         } else {
           sb.innerHTML = `${submitBtn('Complete Change')}`;
           document.getElementById('submitBtn').onclick = async () => {
-            document.getElementById('output').innerHTML = loading();
+            const out = document.getElementById('output');
+            out.innerHTML = loading();
             const r = await callApi('create-rebind', { access_token: state.access_token, email: state.new_email, identity_token: state.identity_token, verifier_token: state.verifier_token });
-            document.getElementById('output').innerHTML = r.success ? resultPanel('✅ Email changed successfully!') : resultPanel(r.error || 'Failed', true);
+            out.innerHTML = r.success ? resultPanel('✅ Email changed successfully!') : resultPanel(r.error || 'Failed', true);
           };
         }
       };
@@ -380,10 +436,10 @@ const HANDLERS = {
   // ── 5. Cancel Pending ──
   'cancel-bind': {
     render() {
-      modalBody.innerHTML = `${field('token','Access Token')}${submitBtn('Cancel Pending Request')}<div id="output"></div>`;
+      modalBody.innerHTML = `${field('token','Access Token','text','Paste your access token')}${submitBtn('Cancel Pending Request')}<div id="output"></div>`;
       document.getElementById('submitBtn').onclick = async () => {
+        if (!validateInputs(['token'])) return;
         const token = document.getElementById('token').value.trim();
-        if (!token) return;
         const out = document.getElementById('output');
         out.innerHTML = loading();
         const r = await callApi('cancel-bind', { access_token: token });
@@ -401,8 +457,8 @@ const HANDLERS = {
     render() {
       modalBody.innerHTML = `${field('eat','EAT Token or Full URL','text','Paste EAT token or URL')}${submitBtn('Convert to Access Token')}<div id="output"></div>`;
       document.getElementById('submitBtn').onclick = async () => {
+        if (!validateInputs(['eat'])) return;
         let input = document.getElementById('eat').value.trim();
-        if (!input) return;
         let eat = input;
         if (input.includes('http') || input.includes('?')) {
           try { const u = new URL(input); eat = u.searchParams.get('eat') || input; } catch {}
@@ -421,10 +477,10 @@ const HANDLERS = {
   // ── 7. Revoke Token ──
   'revoke-token': {
     render() {
-      modalBody.innerHTML = `${field('token','Access Token to Revoke')}${submitBtn('Revoke Token')}<div id="output"></div>`;
+      modalBody.innerHTML = `${field('token','Access Token to Revoke','text','Paste token to revoke')}${submitBtn('Revoke Token')}<div id="output"></div>`;
       document.getElementById('submitBtn').onclick = async () => {
+        if (!validateInputs(['token'])) return;
         const token = document.getElementById('token').value.trim();
-        if (!token) return;
         const out = document.getElementById('output');
         out.innerHTML = loading();
         const r = await callApi('revoke-token', { access_token: token });
@@ -442,8 +498,8 @@ const HANDLERS = {
     render() {
       modalBody.innerHTML = `${field('token','JWT Token','text','Use "Access → JWT" if needed')}${submitBtn('Fetch Login History')}<div id="output"></div>`;
       document.getElementById('submitBtn').onclick = async () => {
+        if (!validateInputs(['token'])) return;
         const token = document.getElementById('token').value.trim();
-        if (!token) return;
         const out = document.getElementById('output');
         out.innerHTML = loading();
         const r = await callApi('login-history', { token });
@@ -473,10 +529,10 @@ const HANDLERS = {
   // ── 9. Platform Info ──
   'platform-info': {
     render() {
-      modalBody.innerHTML = `${field('token','Access Token')}${submitBtn('Check Platforms')}<div id="output"></div>`;
+      modalBody.innerHTML = `${field('token','Access Token','text','Paste your access token')}${submitBtn('Check Platforms')}<div id="output"></div>`;
       document.getElementById('submitBtn').onclick = async () => {
+        if (!validateInputs(['token'])) return;
         const token = document.getElementById('token').value.trim();
-        if (!token) return;
         const out = document.getElementById('output');
         out.innerHTML = loading();
         const r = await callApi('platform-info', { access_token: token });
@@ -494,10 +550,10 @@ const HANDLERS = {
   // ── 10. Access → JWT ──
   'to-jwt': {
     render() {
-      modalBody.innerHTML = `${field('token','Access Token')}${submitBtn('Generate JWT')}<div id="output"></div>`;
+      modalBody.innerHTML = `${field('token','Access Token','text','Paste your access token')}${submitBtn('Generate JWT')}<div id="output"></div>`;
       document.getElementById('submitBtn').onclick = async () => {
+        if (!validateInputs(['token'])) return;
         const token = document.getElementById('token').value.trim();
-        if (!token) return;
         const out = document.getElementById('output');
         out.innerHTML = loading();
         const r = await callApi('to-jwt', { access_token: token });
