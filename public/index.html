@@ -4,7 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>FF BIND TOOLS — Garena Account Security Suite</title>
-<meta name="description" content="Free online tools for Garena account security: bind info, login history, token conversion, and more." />
+<meta name="description" content="Free public tools for Garena account security: bind info, login history, token conversion, and more." />
+<link rel="icon" href="/logo.png" type="image/png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -14,26 +15,16 @@
 
 <canvas id="bg-particles"></canvas>
 
-<!-- NAVBAR -->
 <nav class="nav" id="nav">
   <div class="nav-inner">
     <a href="#" class="brand">
-      <span class="brand-logo">
-        <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <linearGradient id="fire" x1="0" y1="1" x2="0" y2="0">
-              <stop offset="0" stop-color="#ef4444"/>
-              <stop offset="0.5" stop-color="#ff6b35"/>
-              <stop offset="1" stop-color="#ffd60a"/>
-            </linearGradient>
-          </defs>
-          <path d="M50 8 Q 30 28 30 50 Q 30 68 38 78 Q 34 68 40 58 Q 46 48 50 54 Q 54 48 60 58 Q 66 68 62 78 Q 70 68 70 50 Q 70 28 50 8 Z" fill="url(#fire)"/>
-        </svg>
-      </span>
+      <img src="/logo.png" alt="SAGAR FF" class="brand-logo-img" />
       <span class="brand-text">SAGAR FF</span>
     </a>
     <div class="nav-links" id="navLinks">
+      <a href="#how">How It Works</a>
       <a href="#services">Services</a>
+      <a href="#privacy">Privacy</a>
       <a href="#faq">FAQ</a>
       <a href="#support">Support</a>
     </div>
@@ -41,22 +32,67 @@
   </div>
 </nav>
 
-<!-- HERO -->
 <section class="hero">
-  <div class="hero-inner">
-    <span class="hero-badge"><span class="dot"></span> PUBLIC SERVICE · v2.0</span>
+  <div class="hero-inner reveal">
+    <span class="hero-badge"><span class="dot"></span> FREE PUBLIC SERVICE · v2.0</span>
     <h1>FF BIND TOOLS</h1>
     <p class="hero-tagline">
       A free, open service for Garena account security — inspect binds, view login history,
       convert tokens, and more. No signup. No payment. Just tools that work.
     </p>
-    <a href="#services" class="btn-primary">Explore Services ↓</a>
+    <div class="hero-actions">
+      <a href="#services" class="btn-primary">Explore Services ↓</a>
+      <a href="https://sagar-eat-token-web.vercel.app/" target="_blank" rel="noopener" class="btn-ghost">🔑 Get Your Tokens</a>
+    </div>
   </div>
 </section>
 
-<!-- SERVICES -->
+<section id="how" class="section">
+  <div class="section-head reveal">
+    <span class="eyebrow">HOW IT WORKS</span>
+    <h2>Four Simple Steps</h2>
+    <p>From token to result in under 60 seconds. No technical knowledge required.</p>
+  </div>
+  <div class="steps-grid">
+    <div class="step-card reveal">
+      <div class="step-num">01</div>
+      <div class="step-icon">🔑</div>
+      <h3>Get Access Token</h3>
+      <p>Visit our <a href="https://sagar-eat-token-web.vercel.app/" target="_blank" rel="noopener">token getter tool</a> to obtain your EAT or access token securely.</p>
+    </div>
+    <div class="step-card reveal">
+      <div class="step-num">02</div>
+      <div class="step-icon">🔒</div>
+      <h3>Authenticate</h3>
+      <p>Paste your token into any tool. Your token stays local until you click a button.</p>
+    </div>
+    <div class="step-card reveal">
+      <div class="step-num">03</div>
+      <div class="step-icon">⚡</div>
+      <h3>Execute Action</h3>
+      <p>Choose from Bind, Unbind, Change Email, Login History, or any of our 10 utilities.</p>
+    </div>
+    <div class="step-card reveal">
+      <div class="step-num">04</div>
+      <div class="step-icon">✅</div>
+      <h3>Confirmation</h3>
+      <p>Get instant results. Your token is forgotten as soon as the process ends.</p>
+    </div>
+  </div>
+  <div class="token-getter reveal">
+    <div class="token-getter-inner">
+      <div class="token-getter-icon">🔑</div>
+      <div class="token-getter-text">
+        <h3>Don't have a token yet?</h3>
+        <p>Use our free token getter tool to obtain your EAT, Access, or JWT token in seconds.</p>
+      </div>
+      <a href="https://sagar-eat-token-web.vercel.app/" target="_blank" rel="noopener" class="btn-primary">Get Token →</a>
+    </div>
+  </div>
+</section>
+
 <section id="services" class="section">
-  <div class="section-head">
+  <div class="section-head reveal">
     <span class="eyebrow">ALL SERVICES</span>
     <h2>Everything in One Place</h2>
     <p>Click any tool to open it. Enter your token. Get results instantly.</p>
@@ -64,25 +100,81 @@
   <div class="grid" id="servicesGrid"></div>
 </section>
 
-<!-- FAQ -->
+<section id="privacy" class="section">
+  <div class="section-head reveal">
+    <span class="eyebrow">PRIVACY & SAFETY</span>
+    <h2>Your Tokens Are Fully Safe</h2>
+    <p>Built for privacy. Designed to forget. Zero data retention, zero tracking.</p>
+  </div>
+  <div class="privacy-grid">
+    <div class="privacy-card reveal">
+      <div class="privacy-icon">🛡️</div>
+      <h3>No Database</h3>
+      <p>We don't use any database. Your token is held in memory only while the request is being processed — then it's gone.</p>
+    </div>
+    <div class="privacy-card reveal">
+      <div class="privacy-icon">🚫</div>
+      <h3>No Logging</h3>
+      <p>Tokens are never written to logs, files, or analytics. Not by us, not by Vercel.</p>
+    </div>
+    <div class="privacy-card reveal">
+      <div class="privacy-icon">⚡</div>
+      <h3>Forgotten Instantly</h3>
+      <p>As soon as your request finishes, the token is removed from memory. No session, no cache, no trace.</p>
+    </div>
+    <div class="privacy-card reveal">
+      <div class="privacy-icon">🌐</div>
+      <h3>Hosted on Vercel</h3>
+      <p>Vercel's stateless edge functions do not persist request data. Each request is isolated and discarded.</p>
+    </div>
+    <div class="privacy-card reveal">
+      <div class="privacy-icon">🔒</div>
+      <h3>HTTPS Only</h3>
+      <p>All connections are encrypted with TLS. Your token is never transmitted over plain HTTP.</p>
+    </div>
+    <div class="privacy-card reveal">
+      <div class="privacy-icon">👁️</div>
+      <h3>No Third Parties</h3>
+      <p>We never sell, share, or expose your data to any third party. The service is free precisely because we don't monetise your info.</p>
+    </div>
+  </div>
+</section>
+
 <section id="faq" class="section">
-  <div class="section-head">
+  <div class="section-head reveal">
     <span class="eyebrow">GOT QUESTIONS?</span>
     <h2>Frequently Asked</h2>
   </div>
   <div class="faq-list">
-    <div class="faq-item"><div class="faq-q">Is this safe to use?<span>+</span></div><div class="faq-a">Yes. All tools only call Garena's official APIs — the same ones the official game and support website use. They do not inject code, modify the game, or bypass anti-cheat.</div></div>
-    <div class="faq-item"><div class="faq-q">Do I need to pay?<span>+</span></div><div class="faq-a">No. Everything is free for public use. If you want the source code of the bind script itself, contact the owner on Telegram.</div></div>
-    <div class="faq-item"><div class="faq-q">What is an access token?<span>+</span></div><div class="faq-a">An access token is a string that proves your identity to Garena. You can get one by logging in through the EAT flow — use the "EAT to Access Token" tool on this page.</div></div>
-    <div class="faq-item"><div class="faq-q">What is a JWT token?<span>+</span></div><div class="faq-a">A JWT is a signed token used by the game client. You can convert your access token to JWT using the "Access Token to JWT" tool.</div></div>
-    <div class="faq-item"><div class="faq-q">Will my account get banned?<span>+</span></div><div class="faq-a">No known bans have occurred from using these tools. However, using third-party utilities may technically violate Garena's Terms of Service. All risk is on the user.</div></div>
-    <div class="faq-item"><div class="faq-q">Why are device names sometimes replaced?<span>+</span></div><div class="faq-a">Login history entries from modded or suspicious clients are automatically replaced with clean device info to make the output readable and professional.</div></div>
+    <div class="faq-item reveal">
+      <div class="faq-q">Is this safe to use?<span>+</span></div>
+      <div class="faq-a">Yes, fully safe. All tools only call Garena's official APIs — the same ones the official game and support website use. They don't inject code, modify the game, or bypass anti-cheat. Your tokens are processed in-memory and forgotten immediately after each request.</div>
+    </div>
+    <div class="faq-item reveal">
+      <div class="faq-q">Will my account get banned?<span>+</span></div>
+      <div class="faq-a">No — it's fully safe. These tools only use Garena's own official endpoints (the same ones the game and support site use). There is no code injection, no memory modification, and no anti-cheat bypass. No known bans have occurred from using this service.</div>
+    </div>
+    <div class="faq-item reveal">
+      <div class="faq-q">Do you store my tokens?<span>+</span></div>
+      <div class="faq-a">Never. This website is hosted on Vercel with zero database. Tokens are held in memory only during the request and discarded as soon as the response is returned. We don't log, cache, or store anything.</div>
+    </div>
+    <div class="faq-item reveal">
+      <div class="faq-q">Do I need to pay?<span>+</span></div>
+      <div class="faq-a">No. Everything is free for public use. If you want the source code of the bind tool itself, contact the owner on Telegram.</div>
+    </div>
+    <div class="faq-item reveal">
+      <div class="faq-q">What is an access token?<span>+</span></div>
+      <div class="faq-a">An access token is a string that proves your identity to Garena. You can get one through our token getter tool — click the "Get Your Tokens" button anywhere on this page.</div>
+    </div>
+    <div class="faq-item reveal">
+      <div class="faq-q">What is a JWT token?<span>+</span></div>
+      <div class="faq-a">A JWT is a signed token used by the game client. You can convert your access token to JWT using the "Access Token → JWT" tool.</div>
+    </div>
   </div>
 </section>
 
-<!-- SUPPORT -->
 <section id="support" class="section">
-  <div class="support-card">
+  <div class="support-card reveal">
     <h2>Need Help?</h2>
     <p>For questions, bug reports, or source-code inquiries — reach out on Telegram.</p>
     <div class="support-actions">
@@ -92,40 +184,36 @@
   </div>
 </section>
 
-<!-- FOOTER -->
 <footer>
   <div class="footer-grid">
     <div class="footer-brand">
       <div class="brand">
-        <span class="brand-logo">
-          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-            <defs><linearGradient id="fire2" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ef4444"/><stop offset="0.5" stop-color="#ff6b35"/><stop offset="1" stop-color="#ffd60a"/></linearGradient></defs>
-            <path d="M50 8 Q 30 28 30 50 Q 30 68 38 78 Q 34 68 40 58 Q 46 48 50 54 Q 54 48 60 58 Q 66 68 62 78 Q 70 68 70 50 Q 70 28 50 8 Z" fill="url(#fire2)"/>
-          </svg>
-        </span>
+        <img src="/logo.png" alt="SAGAR FF" class="brand-logo-img" />
         <span class="brand-text">SAGAR FF</span>
       </div>
-      <p>Free, public Garena account security tools. Built for the community.</p>
+      <p>Free, public Garena account security tools. Built for the community with privacy at its core.</p>
     </div>
     <div class="footer-col">
       <h4>Quick Links</h4>
+      <a href="#how">How It Works</a>
       <a href="#services">Services</a>
+      <a href="#privacy">Privacy</a>
       <a href="#faq">FAQ</a>
-      <a href="#support">Support</a>
     </div>
     <div class="footer-col">
       <h4>Support</h4>
       <a href="https://t.me/RealSagarFF" target="_blank" rel="noopener">Telegram DM</a>
       <a href="https://t.me/sagarofficialch" target="_blank" rel="noopener">Updates Channel</a>
+      <a href="https://sagar-eat-token-web.vercel.app/" target="_blank" rel="noopener">Token Getter</a>
     </div>
     <div class="footer-col">
       <h4>Legal</h4>
       <a href="#faq">Terms & Risk</a>
-      <a href="#faq">Privacy</a>
+      <a href="#privacy">Privacy Policy</a>
     </div>
   </div>
   <div class="footer-src">
-    <span>Want the source code of the bind tool? Contact the owner on Telegram — source only, this website is not included.</span>
+    Want the source code of the bind tool? Contact the owner on Telegram — <strong>source only</strong>, this website is not included.
   </div>
   <div class="footer-bottom">
     <span>© <span id="year"></span> SAGAR FF — All rights reserved.</span>
@@ -133,11 +221,16 @@
   </div>
 </footer>
 
-<!-- MODAL -->
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal" id="modal">
     <div class="modal-head">
-      <h3 id="modalTitle">Tool</h3>
+      <div class="modal-head-left">
+        <div class="modal-icon" id="modalIcon">🛠️</div>
+        <div>
+          <h3 id="modalTitle">Tool</h3>
+          <p class="modal-sub" id="modalSub">Enter your details below</p>
+        </div>
+      </div>
       <button class="modal-close" id="modalClose">✕</button>
     </div>
     <div class="modal-body" id="modalBody"></div>
