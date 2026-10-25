@@ -23,37 +23,20 @@ function readVarint(buf, off) {
   }
   return [r, off];
 }
-
 function* iterFields(buf) {
   let o = 0;
   while (o < buf.length) {
     const [tag, next] = readVarint(buf, o);
     o = next;
     if (tag === 0n) break;
-    const f = Number(tag >> 3n);
-    const wt = Number(tag & 7n);
-    if (wt === 0) {
-      const [v, x] = readVarint(buf, o);
-      o = x;
-      yield [f, 0, v];
-    } else if (wt === 2) {
-      const [len, x] = readVarint(buf, o);
-      o = x;
-      const n = Number(len);
-      yield [f, 2, buf.slice(o, o + n)];
-      o += n;
-    } else if (wt === 1) {
-      yield [f, 1, buf.slice(o, o + 8)];
-      o += 8;
-    } else if (wt === 5) {
-      yield [f, 5, buf.slice(o, o + 4)];
-      o += 4;
-    } else {
-      break;
-    }
+    const f = Number(tag >> 3n), wt = Number(tag & 7n);
+    if (wt === 0) { const [v, x] = readVarint(buf, o); o = x; yield [f, 0, v]; }
+    else if (wt === 2) { const [len, x] = readVarint(buf, o); o = x; const n = Number(len); yield [f, 2, buf.slice(o, o + n)]; o += n; }
+    else if (wt === 1) { yield [f, 1, buf.slice(o, o + 8)]; o += 8; }
+    else if (wt === 5) { yield [f, 5, buf.slice(o, o + 4)]; o += 4; }
+    else break;
   }
 }
-
 function parseEntry(buf) {
   const e = { LastLogin: 0, Extra: 0, DeviceModel: '', DeviceArchitecture: '', LoginType: 0 };
   for (const [n, wt, v] of iterFields(buf)) {
@@ -65,12 +48,9 @@ function parseEntry(buf) {
   }
   return e;
 }
-
 function parseLoginHistory(buf) {
   const out = [];
-  for (const [n, wt, v] of iterFields(buf)) {
-    if (n === 1 && wt === 2) out.push(parseEntry(v));
-  }
+  for (const [n, wt, v] of iterFields(buf)) if (n === 1 && wt === 2) out.push(parseEntry(v));
   return out;
 }
 
@@ -81,20 +61,50 @@ function isSuspicious(s) {
   return SUSPICIOUS_KW.some(k => low.includes(k));
 }
 
+// ✅ NEW: Human-readable cooldown
+function formatCooldown(sec) {
+  sec = Number(sec) || 0;
+  if (sec <= 0) return '0 Sec';
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  const parts = [];
+  if (d) parts.push(`${d} Day${d !== 1 ? 's' : ''}`);
+  if (h) parts.push(`${h} Hour${h !== 1 ? 's' : ''}`);
+  if (m) parts.push(`${m} Min`);
+  if (s || !parts.length) parts.push(`${s} Sec`);
+  return parts.join(' ');
+}
+
+// ✅ NEW: Fetch player info (UID / Nickname / Region)
+async function fetchPlayer(access_token) {
+  try {
+    const pr = await fetch(`https://api-otrss.garena.com/support/callback/?access_token=${encodeURIComponent(access_token)}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36' },
+      redirect: 'follow',
+    });
+    const u = new URL(pr.url);
+    return {
+      uid: u.searchParams.get('account_id') || 'Unknown',
+      nickname: decodeURIComponent(u.searchParams.get('nickname') || 'Unknown'),
+      region: u.searchParams.get('region') || 'Unknown',
+    };
+  } catch {
+    return null;
+  }
+}
+
 function httpsRaw(url, opts, body) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
     const req = https.request({
-      hostname: u.hostname,
-      path: u.pathname + u.search,
-      method: opts.method || 'GET',
-      headers: opts.headers || {},
-      rejectUnauthorized: false,
-      timeout: 30000,
+      hostname: u.hostname, path: u.pathname + u.search,
+      method: opts.method || 'GET', headers: opts.headers || {},
+      rejectUnauthorized: false, timeout: 30000,
     }, (res) => {
-      const chunks = [];
-      res.on('data', x => chunks.push(x));
-      res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks) }));
+      const c = []; res.on('data', x => c.push(x));
+      res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(c) }));
     });
     req.on('error', reject);
     req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
@@ -106,16 +116,11 @@ function httpsRaw(url, opts, body) {
 async function garenaPost(ep, form) {
   const r = await fetch(`${BASE}/${ep}`, {
     method: 'POST',
-    headers: {
-      'User-Agent': MSDK_UA,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Accept': 'application/json',
-    },
+    headers: { 'User-Agent': MSDK_UA, 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
     body: new URLSearchParams(form).toString(),
   });
   return { status: r.status, data: await r.json().catch(() => ({})) };
 }
-
 async function garenaGet(ep, params) {
   const qs = new URLSearchParams(params).toString();
   const r = await fetch(`${BASE}/${ep}?${qs}`, {
@@ -123,7 +128,6 @@ async function garenaGet(ep, params) {
   });
   return { status: r.status, data: await r.json().catch(() => ({})) };
 }
-
 function decodeNickname(enc) {
   if (!enc) return 'N/A';
   try {
@@ -132,25 +136,38 @@ function decodeNickname(enc) {
     for (let i = 0; i < raw.length; i++) out[i] = raw[i] ^ NICK_KEY[i % NICK_KEY.length];
     const s = out.toString('utf8').replace(/\uFFFD/g, '');
     return s.trim().length > 0 ? s : 'Hidden';
-  } catch {
-    return 'N/A';
-  }
+  } catch { return 'N/A'; }
 }
 
 // ═══════════ ACTIONS ═══════════
+async function playerInfo({ access_token }, res) {
+  if (!access_token) return res.json({ success: false, error: 'Token required' });
+  const player = await fetchPlayer(access_token);
+  if (!player) return res.json({ success: false, error: 'Could not fetch player info' });
+  return res.json({ success: true, data: player });
+}
+
 async function bindInfo({ access_token }, res) {
   if (!access_token) return res.json({ success: false, error: 'Access token required' });
-  const r = await garenaGet('bind:get_bind_info', { app_id: APP_ID, access_token });
-  if (r.status !== 200) return res.json({ success: false, error: `Garena error ${r.status}`, raw: r.data });
+
+  // ✅ Fetch player info in parallel with bind info
+  const [player, r] = await Promise.all([
+    fetchPlayer(access_token),
+    garenaGet('bind:get_bind_info', { app_id: APP_ID, access_token }),
+  ]);
+
+  if (r.status !== 200) return res.json({ success: false, error: `Garena error ${r.status}`, player });
   const d = r.data;
   return res.json({
     success: d.result === 0,
+    player,
     data: {
       current_email: d.email || '',
       pending_email: d.email_to_be || '',
       mobile: d.mobile || '',
       pending_mobile: d.mobile_to_be || '',
       cooldown_seconds: d.request_exec_countdown || 0,
+      cooldown_human: formatCooldown(d.request_exec_countdown || 0),
       result: d.result,
     },
   });
@@ -158,22 +175,13 @@ async function bindInfo({ access_token }, res) {
 
 async function sendOtp({ access_token, email, locale, region }, res) {
   if (!access_token || !email) return res.json({ success: false, error: 'Token + email required' });
-  const r = await garenaPost('bind:send_otp', {
-    email,
-    locale: locale || 'en_PK',
-    region: region || 'PK',
-    app_id: APP_ID,
-    access_token,
-  });
+  const r = await garenaPost('bind:send_otp', { email, locale: locale || 'en_PK', region: region || 'PK', app_id: APP_ID, access_token });
   return res.json({ success: r.data.result === 0, data: r.data });
 }
 
 async function verifyOtp({ access_token, email, otp }, res) {
   if (!access_token || !email || !otp) return res.json({ success: false, error: 'Token, email, OTP required' });
-  const r = await garenaPost('bind:verify_otp', {
-    app_id: APP_ID, access_token, email,
-    code: otp, otp, type: '1',
-  });
+  const r = await garenaPost('bind:verify_otp', { app_id: APP_ID, access_token, email, code: otp, otp, type: '1' });
   return res.json({ success: r.data.result === 0, data: r.data });
 }
 
@@ -188,9 +196,7 @@ async function verifyIdentity({ access_token, email, otp, security_code }, res) 
 
 async function createBind({ access_token, email, verifier_token, security_code }, res) {
   if (!access_token || !email || !verifier_token) return res.json({ success: false, error: 'Missing fields' });
-  const r = await garenaPost('bind:create_bind_request', {
-    email, app_id: APP_ID, access_token, verifier_token, secondary_password: security_code || '',
-  });
+  const r = await garenaPost('bind:create_bind_request', { email, app_id: APP_ID, access_token, verifier_token, secondary_password: security_code || '' });
   return res.json({ success: r.data.result === 0, data: r.data });
 }
 
@@ -202,23 +208,26 @@ async function createUnbind({ access_token, identity_token }, res) {
 
 async function createRebind({ access_token, email, identity_token, verifier_token }, res) {
   if (!access_token || !email || !identity_token || !verifier_token) return res.json({ success: false, error: 'Missing fields' });
-  const r = await garenaPost('bind:create_rebind_request', {
-    identity_token, email, app_id: APP_ID, verifier_token, access_token,
-  });
+  const r = await garenaPost('bind:create_rebind_request', { identity_token, email, app_id: APP_ID, verifier_token, access_token });
   return res.json({ success: r.data.result === 0, data: r.data });
 }
 
 async function cancelBind({ access_token }, res) {
   if (!access_token) return res.json({ success: false, error: 'Token required' });
-  const r = await garenaPost('bind:cancel_request', { app_id: APP_ID, access_token });
-  return res.json({ success: r.data.result === 0, data: r.data });
+
+  // ✅ Fetch player + do cancel in parallel
+  const [player, r] = await Promise.all([
+    fetchPlayer(access_token),
+    garenaPost('bind:cancel_request', { app_id: APP_ID, access_token }),
+  ]);
+
+  return res.json({ success: r.data.result === 0, player, data: r.data });
 }
 
 async function eatToken({ eat_token }, res) {
   if (!eat_token) return res.json({ success: false, error: 'EAT required' });
   const r = await fetch(`https://api-otrss.garena.com/support/callback/?access_token=${encodeURIComponent(eat_token)}`, {
-    headers: { 'User-Agent': 'Mozilla/5.0' },
-    redirect: 'follow',
+    headers: { 'User-Agent': 'Mozilla/5.0' }, redirect: 'follow',
   });
   const u = new URL(r.url);
   const a = u.searchParams.get('access_token');
@@ -236,13 +245,18 @@ async function eatToken({ eat_token }, res) {
 
 async function revokeToken({ access_token }, res) {
   if (!access_token) return res.json({ success: false, error: 'Token required' });
-  const r = await fetch(
-    `https://100067.connect.garena.com/oauth/logout?access_token=${encodeURIComponent(access_token)}&refresh_token=${REFRESH_TOKEN}`,
-    { headers: { 'User-Agent': MSDK_UA, 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' } }
-  );
+
+  // ✅ Fetch player info + revoke in parallel
+  const [player, r] = await Promise.all([
+    fetchPlayer(access_token),
+    fetch(`https://100067.connect.garena.com/oauth/logout?access_token=${encodeURIComponent(access_token)}&refresh_token=${REFRESH_TOKEN}`, {
+      headers: { 'User-Agent': MSDK_UA, 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+    }),
+  ]);
+
   const t = await r.text();
   const ok = r.status === 200 && !t.toLowerCase().includes('error');
-  return res.json({ success: ok, message: ok ? 'Token revoked' : 'Revoke failed' });
+  return res.json({ success: ok, player, message: ok ? 'Token revoked' : 'Revoke failed' });
 }
 
 async function loginHistory({ token }, res) {
@@ -251,11 +265,8 @@ async function loginHistory({ token }, res) {
   if (parts.length !== 3) return res.json({ success: false, error: 'Invalid JWT format' });
 
   let payload;
-  try {
-    payload = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
-  } catch {
-    return res.json({ success: false, error: 'Cannot decode JWT' });
-  }
+  try { payload = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString()); }
+  catch { return res.json({ success: false, error: 'Cannot decode JWT' }); }
 
   const region = payload.lock_region || payload.region;
   if (!region) return res.json({ success: false, error: 'No region in JWT' });
@@ -265,10 +276,7 @@ async function loginHistory({ token }, res) {
   if (rUp === 'IND') domain = 'client.ind.freefiremobile.com';
   else if (['BR', 'US', 'NA', 'SAC'].includes(rUp)) domain = 'client.us.freefiremobile.com';
 
-  const raw = Buffer.from(
-    'ac74dc5eb016b4ed43774eec3d13e042bd8faa337913efeb6b92ddfbf113c5cd7972e5a9fee97dc9aa8a71270cae1dc9902c91a5eeee312684d4834c003fcf7d83067c9157de749063ed0714b442666c',
-    'hex'
-  );
+  const raw = Buffer.from('ac74dc5eb016b4ed43774eec3d13e042bd8faa337913efeb6b92ddfbf113c5cd7972e5a9fee97dc9aa8a71270cae1dc9902c91a5eeee312684d4834c003fcf7d83067c9157de749063ed0714b442666c', 'hex');
 
   const resp = await httpsRaw(`https://${domain}/GetLoginHistory`, {
     method: 'POST',
@@ -308,16 +316,11 @@ async function loginHistory({ token }, res) {
 
 async function platformInfo({ access_token }, res) {
   if (!access_token) return res.json({ success: false, error: 'Token required' });
-  const r = await fetch(
-    `https://100067.connect.garena.com/bind/app/platform/info/get?access_token=${encodeURIComponent(access_token)}`,
-    { headers: { 'User-Agent': 'GarenaMSDK/4.0.19P9(Redmi Note 5 ;Android 9;en;US;)' } }
-  );
+  const r = await fetch(`https://100067.connect.garena.com/bind/app/platform/info/get?access_token=${encodeURIComponent(access_token)}`, {
+    headers: { 'User-Agent': 'GarenaMSDK/4.0.19P9(Redmi Note 5 ;Android 9;en;US;)' },
+  });
   const d = await r.json();
-  const names = {
-    1: 'Garena', 3: 'Facebook', 4: 'Guest', 5: 'VK', 6: 'Huawei', 7: 'Apple',
-    8: 'Google', 10: 'GameCenter / Line', 11: 'X (Twitter)', 13: 'Apple ID',
-    28: 'Line', 35: 'TikTok',
-  };
+  const names = { 1: 'Garena', 3: 'Facebook', 4: 'Guest', 5: 'VK', 6: 'Huawei', 7: 'Apple', 8: 'Google', 10: 'GameCenter / Line', 11: 'X (Twitter)', 13: 'Apple ID', 28: 'Line', 35: 'TikTok' };
   return res.json({
     success: true,
     data: {
@@ -329,10 +332,9 @@ async function platformInfo({ access_token }, res) {
 
 async function toJwt({ access_token }, res) {
   if (!access_token) return res.json({ success: false, error: 'Token required' });
-  const r = await fetch(
-    `https://ff-jwt-gen-api.lovable.app/api/public/token?access_token=${encodeURIComponent(access_token)}`,
-    { headers: { 'Accept': 'application/json' } }
-  );
+  const r = await fetch(`https://ff-jwt-gen-api.lovable.app/api/public/token?access_token=${encodeURIComponent(access_token)}`, {
+    headers: { 'Accept': 'application/json' },
+  });
   if (r.status !== 200) return res.json({ success: false, error: `API returned ${r.status}` });
   const d = await r.json();
   if (!d.token) return res.json({ success: false, error: 'No token returned' });
@@ -355,19 +357,17 @@ module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ success: false, error: 'Method not allowed' });
 
   const action = req.query.action;
   let body = req.body;
-  if (typeof body === 'string') {
-    try { body = JSON.parse(body); } catch { body = {}; }
-  }
+  if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = {}; } }
   body = body || {};
 
   try {
     switch (action) {
+      case 'player-info':     return await playerInfo(body, res);
       case 'bind-info':       return await bindInfo(body, res);
       case 'send-otp':        return await sendOtp(body, res);
       case 'verify-otp':      return await verifyOtp(body, res);
