@@ -406,3 +406,44 @@ footer { background: var(--bg-2); border-top: 1px solid var(--border); padding: 
   .modal { max-height: 96vh; }
   .step-num { font-size: 38px; }
 }
+
+/* ═══════════ PLAYER CARD ═══════════ */
+.player-card {
+  background: linear-gradient(135deg, rgba(255, 107, 53, 0.08), rgba(255, 214, 10, 0.05));
+  border: 1px solid rgba(255, 107, 53, 0.25);
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: fadeIn 0.35s ease;
+}
+.player-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--fire);
+  font-weight: 600;
+}
+.player-header::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--emerald);
+  box-shadow: 0 0 8px var(--emerald);
+  animation: pulse 2s ease-in-out infinite;
+}
+.player-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  gap: 12px;
+}
+.player-row span:first-child { color: var(--muted); flex-shrink: 0; }
+.player-row span:last-child { color: var(--text); font-weight: 600; text-align: right; word-break: break-all; }
