@@ -39,7 +39,8 @@
       }
     }
     particles.forEach(p => {
-      p.x += p.vx; p.y += p.vy;
+      p.x += p.vx;
+      p.y += p.vy;
       if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
       if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
       ctx.fillStyle = 'rgba(255, 159, 28, 0.5)';
@@ -64,7 +65,10 @@ navLinks?.querySelectorAll('a').forEach(a => a.addEventListener('click', () => n
 // ═══════════ SCROLL REVEAL ═══════════
 const io = new IntersectionObserver((entries) => {
   entries.forEach(e => {
-    if (e.isIntersecting) { e.target.classList.add('visible'); io.unobserve(e.target); }
+    if (e.isIntersecting) {
+      e.target.classList.add('visible');
+      io.unobserve(e.target);
+    }
   });
 }, { threshold: 0.08, rootMargin: '0px 0px -60px 0px' });
 document.querySelectorAll('.reveal').forEach(el => io.observe(el));
@@ -84,7 +88,7 @@ const SERVICES = [
 ];
 
 const grid = document.getElementById('servicesGrid');
-SERVICES.forEach((s, i) => {
+SERVICES.forEach(s => {
   const card = document.createElement('div');
   card.className = 'svc-card reveal';
   card.innerHTML = `
@@ -103,7 +107,6 @@ SERVICES.forEach((s, i) => {
 });
 
 // ═══════════ MODAL ═══════════
-const modal = document.getElementById('modal');
 const overlay = document.getElementById('modalOverlay');
 const modalTitle = document.getElementById('modalTitle');
 const modalSub = document.getElementById('modalSub');
@@ -111,28 +114,61 @@ const modalIcon = document.getElementById('modalIcon');
 const modalBody = document.getElementById('modalBody');
 
 document.getElementById('modalClose').addEventListener('click', closeModal);
-overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+overlay.addEventListener('click', (e) => {
+  if (e.target === overlay) closeModal();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeModal();
+});
 
-function closeModal() { overlay.classList.remove('open'); modalBody.innerHTML = ''; }
+function closeModal() {
+  overlay.classList.remove('open');
+  modalBody.innerHTML = '';
+}
 
-// ═══════════ API HELPER ═══════════
+// ═══════════ ✅ FIXED: API HELPER (handles non-JSON 500 pages) ═══════════
 async function callApi(action, payload) {
-  const r = await fetch(`/api/handler?action=${encodeURIComponent(action)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  return r.json();
+  try {
+    const r = await fetch(`/api/handler?action=${encodeURIComponent(action)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    const text = await r.text();
+
+    if (!text) {
+      return { success: false, error: `Empty response (HTTP ${r.status})` };
+    }
+
+    try {
+      return JSON.parse(text);
+    } catch {
+      // Server returned HTML (e.g. Vercel error page) — surface a clean message
+      const clean = text.replace(/<[^>]+>/g, '').trim().slice(0, 200);
+      return {
+        success: false,
+        error: `Server error (HTTP ${r.status})${clean ? ': ' + clean : ''}`,
+      };
+    }
+  } catch (err) {
+    return { success: false, error: `Network error: ${err.message}` };
+  }
 }
 
 // ═══════════ UI HELPERS ═══════════
 function field(id, label, type = 'text', placeholder = '') {
   return `<div class="field"><label>${label}</label><input id="${id}" type="${type}" placeholder="${placeholder}" autocomplete="off" /></div>`;
 }
-function submitBtn(text = 'Submit') { return `<button class="btn-primary" id="submitBtn">${text}</button>`; }
-function loading() { return `<div class="loading">Processing…</div>`; }
-function resultPanel(html, isError = false) { return `<div class="result ${isError ? 'error' : 'success'}">${html}</div>`; }
+function submitBtn(text = 'Submit') {
+  return `<button class="btn-primary" id="submitBtn">${text}</button>`;
+}
+function loading() {
+  return `<div class="loading">Processing…</div>`;
+}
+function resultPanel(html, isError = false) {
+  return `<div class="result ${isError ? 'error' : 'success'}">${html}</div>`;
+}
 
 // ═══════════ OPEN SERVICE ═══════════
 function openService(id) {
@@ -156,25 +192,24 @@ const HANDLERS = {
         if (!token) return;
         const out = document.getElementById('output');
         out.innerHTML = loading();
-        try {
-          const r = await callApi('bind-info', { access_token: token });
-          if (!r.success) throw new Error(r.error || 'Failed');
-          const d = r.data;
-          out.innerHTML = resultPanel(`
-            <div class="kv"><span>Current Email</span><span>${d.current_email || 'None'}</span></div>
-            <div class="kv"><span>Pending Email</span><span>${d.pending_email || 'None'}</span></div>
-            <div class="kv"><span>Current Mobile</span><span>${d.mobile || 'None'}</span></div>
-            <div class="kv"><span>Pending Mobile</span><span>${d.pending_mobile || 'None'}</span></div>
-            <div class="kv"><span>Cooldown</span><span>${d.cooldown_seconds} sec</span></div>
-            <div class="kv"><span>Status</span><span style="color:var(--emerald)">✓ Success</span></div>`);
-        } catch (e) { out.innerHTML = resultPanel(e.message, true); }
+        const r = await callApi('bind-info', { access_token: token });
+        if (!r.success) return out.innerHTML = resultPanel(r.error || 'Failed', true);
+        const d = r.data;
+        out.innerHTML = resultPanel(`
+          <div class="kv"><span>Current Email</span><span>${d.current_email || 'None'}</span></div>
+          <div class="kv"><span>Pending Email</span><span>${d.pending_email || 'None'}</span></div>
+          <div class="kv"><span>Current Mobile</span><span>${d.mobile || 'None'}</span></div>
+          <div class="kv"><span>Pending Mobile</span><span>${d.pending_mobile || 'None'}</span></div>
+          <div class="kv"><span>Cooldown</span><span>${d.cooldown_seconds} sec</span></div>
+          <div class="kv"><span>Status</span><span style="color:var(--emerald)">✓ Success</span></div>`);
       };
     },
   },
 
   'bind-email': {
     render() {
-      const state = {}; let step = 1;
+      const state = {};
+      let step = 1;
       const draw = () => {
         modalBody.innerHTML = `
           <div class="step-indicator">${[1,2,3].map(n => `<div class="step-dot ${n===step?'active':n<step?'done':''}"></div>`).join('')}</div>
@@ -189,7 +224,8 @@ const HANDLERS = {
             document.getElementById('output').innerHTML = loading();
             const r = await callApi('send-otp', { access_token: state.access_token, email: state.email });
             if (!r.success) return document.getElementById('output').innerHTML = resultPanel(r.error || 'Failed to send OTP', true);
-            step = 2; draw();
+            step = 2;
+            draw();
           };
         } else if (step === 2) {
           sb.innerHTML = `${field('otp','OTP Code (from email)','text','6-digit code')}${submitBtn('Verify OTP')}`;
@@ -201,7 +237,8 @@ const HANDLERS = {
             if (!r.success) return document.getElementById('output').innerHTML = resultPanel(r.error || 'Invalid OTP', true);
             state.verifier_token = r.data.verifier_token || '';
             if (!state.verifier_token) return document.getElementById('output').innerHTML = resultPanel('Verifier token not returned', true);
-            step = 3; draw();
+            step = 3;
+            draw();
           };
         } else {
           sb.innerHTML = `${field('code','Security Code (6 digits)','password')}${submitBtn('Complete Bind')}`;
@@ -209,8 +246,15 @@ const HANDLERS = {
             const code = document.getElementById('code').value.trim();
             if (!code) return;
             document.getElementById('output').innerHTML = loading();
-            const r = await callApi('create-bind', { access_token: state.access_token, email: state.email, verifier_token: state.verifier_token, security_code: code });
-            document.getElementById('output').innerHTML = r.success ? resultPanel('✅ Email bound successfully!') : resultPanel(r.error || 'Bind failed', true);
+            const r = await callApi('create-bind', {
+              access_token: state.access_token,
+              email: state.email,
+              verifier_token: state.verifier_token,
+              security_code: code,
+            });
+            document.getElementById('output').innerHTML = r.success
+              ? resultPanel('✅ Email bound successfully!')
+              : resultPanel(r.error || 'Bind failed', true);
           };
         }
       };
@@ -220,7 +264,8 @@ const HANDLERS = {
 
   'unbind-email': {
     render() {
-      const state = {}; let step = 1;
+      const state = {};
+      let step = 1;
       const draw = () => {
         modalBody.innerHTML = `
           <div class="step-indicator">${[1,2,3].map(n => `<div class="step-dot ${n===step?'active':n<step?'done':''}"></div>`).join('')}</div>
@@ -235,7 +280,8 @@ const HANDLERS = {
             document.getElementById('output').innerHTML = loading();
             const r = await callApi('send-otp', { access_token: state.access_token, email: state.email });
             if (!r.success) return document.getElementById('output').innerHTML = resultPanel(r.error || 'Failed', true);
-            step = 2; draw();
+            step = 2;
+            draw();
           };
         } else if (step === 2) {
           sb.innerHTML = `${field('otp','OTP Code','text','From bound email')}${submitBtn('Verify Identity')}`;
@@ -247,14 +293,17 @@ const HANDLERS = {
             if (!r.success) return document.getElementById('output').innerHTML = resultPanel(r.error || 'Failed', true);
             state.identity_token = r.data.identity_token || '';
             if (!state.identity_token) return document.getElementById('output').innerHTML = resultPanel('No identity token', true);
-            step = 3; draw();
+            step = 3;
+            draw();
           };
         } else {
           sb.innerHTML = `${submitBtn('Complete Unbind')}`;
           document.getElementById('submitBtn').onclick = async () => {
             document.getElementById('output').innerHTML = loading();
             const r = await callApi('create-unbind', { access_token: state.access_token, identity_token: state.identity_token });
-            document.getElementById('output').innerHTML = r.success ? resultPanel('✅ Email unbound successfully!') : resultPanel(r.error || 'Unbind failed', true);
+            document.getElementById('output').innerHTML = r.success
+              ? resultPanel('✅ Email unbound successfully!')
+              : resultPanel(r.error || 'Unbind failed', true);
           };
         }
       };
@@ -264,7 +313,8 @@ const HANDLERS = {
 
   'change-email': {
     render() {
-      const state = {}; let step = 1;
+      const state = {};
+      let step = 1;
       const draw = () => {
         modalBody.innerHTML = `
           <div class="step-indicator">${[1,2,3,4,5].map(n => `<div class="step-dot ${n===step?'active':n<step?'done':''}"></div>`).join('')}</div>
@@ -279,7 +329,8 @@ const HANDLERS = {
             document.getElementById('output').innerHTML = loading();
             const r = await callApi('send-otp', { access_token: state.access_token, email: state.old_email });
             if (!r.success) return document.getElementById('output').innerHTML = resultPanel(r.error || 'Failed', true);
-            step = 2; draw();
+            step = 2;
+            draw();
           };
         } else if (step === 2) {
           sb.innerHTML = `${field('otp','OTP from OLD email')}${submitBtn('Verify Identity')}`;
@@ -291,7 +342,8 @@ const HANDLERS = {
             if (!r.success) return document.getElementById('output').innerHTML = resultPanel(r.error || 'Failed', true);
             state.identity_token = r.data.identity_token || '';
             if (!state.identity_token) return document.getElementById('output').innerHTML = resultPanel('No identity token', true);
-            step = 3; draw();
+            step = 3;
+            draw();
           };
         } else if (step === 3) {
           sb.innerHTML = `${field('new_email','New Email','email')}${submitBtn('Send OTP to New Email')}`;
@@ -301,7 +353,8 @@ const HANDLERS = {
             document.getElementById('output').innerHTML = loading();
             const r = await callApi('send-otp', { access_token: state.access_token, email: state.new_email });
             if (!r.success) return document.getElementById('output').innerHTML = resultPanel(r.error || 'Failed', true);
-            step = 4; draw();
+            step = 4;
+            draw();
           };
         } else if (step === 4) {
           sb.innerHTML = `${field('otp_new','OTP from NEW email')}${submitBtn('Verify New OTP')}`;
@@ -313,14 +366,22 @@ const HANDLERS = {
             if (!r.success) return document.getElementById('output').innerHTML = resultPanel(r.error || 'Failed', true);
             state.verifier_token = r.data.verifier_token || '';
             if (!state.verifier_token) return document.getElementById('output').innerHTML = resultPanel('No verifier token', true);
-            step = 5; draw();
+            step = 5;
+            draw();
           };
         } else {
           sb.innerHTML = `${submitBtn('Complete Change')}`;
           document.getElementById('submitBtn').onclick = async () => {
             document.getElementById('output').innerHTML = loading();
-            const r = await callApi('create-rebind', { access_token: state.access_token, email: state.new_email, identity_token: state.identity_token, verifier_token: state.verifier_token });
-            document.getElementById('output').innerHTML = r.success ? resultPanel('✅ Email changed successfully!') : resultPanel(r.error || 'Failed', true);
+            const r = await callApi('create-rebind', {
+              access_token: state.access_token,
+              email: state.new_email,
+              identity_token: state.identity_token,
+              verifier_token: state.verifier_token,
+            });
+            document.getElementById('output').innerHTML = r.success
+              ? resultPanel('✅ Email changed successfully!')
+              : resultPanel(r.error || 'Failed', true);
           };
         }
       };
@@ -337,7 +398,9 @@ const HANDLERS = {
         const out = document.getElementById('output');
         out.innerHTML = loading();
         const r = await callApi('cancel-bind', { access_token: token });
-        out.innerHTML = r.success ? resultPanel('✅ Pending request cancelled!') : resultPanel(r.error || 'Failed', true);
+        out.innerHTML = r.success
+          ? resultPanel('✅ Pending request cancelled!')
+          : resultPanel(r.error || 'Failed', true);
       };
     },
   },
@@ -350,7 +413,10 @@ const HANDLERS = {
         if (!input) return;
         let eat = input;
         if (input.includes('http') || input.includes('?')) {
-          try { const u = new URL(input); eat = u.searchParams.get('eat') || input; } catch {}
+          try {
+            const u = new URL(input);
+            eat = u.searchParams.get('eat') || input;
+          } catch {}
         }
         const out = document.getElementById('output');
         out.innerHTML = loading();
@@ -374,7 +440,9 @@ const HANDLERS = {
         const out = document.getElementById('output');
         out.innerHTML = loading();
         const r = await callApi('revoke-token', { access_token: token });
-        out.innerHTML = r.success ? resultPanel('✅ Token revoked successfully!') : resultPanel(r.error || r.message || 'Failed', true);
+        out.innerHTML = r.success
+          ? resultPanel('✅ Token revoked successfully!')
+          : resultPanel(r.error || r.message || 'Failed', true);
       };
     },
   },
