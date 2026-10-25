@@ -12,6 +12,15 @@ const CLEAN_ARCH = 'ARM64 FP ASIMD AES VMH | 2513 | 6';
 const REFRESH_TOKEN = '1380dcb63ab3a077dc05bdf0b25ba4497c403a5b4eae96d7203010eafa6c83a8';
 const NICK_KEY = Buffer.from('1e5898ccb8dfdd921f9bdea848768b64a201');
 
+// ═══════════ TIMEOUT HELPER ═══════════
+function fetchT(url, opts = {}, ms = 25000) {
+  try {
+    return fetch(url, { ...opts, signal: AbortSignal.timeout(ms) });
+  } catch {
+    return fetch(url, opts);
+  }
+}
+
 // ═══════════ PROTOBUF PARSER ═══════════
 function readVarint(buf, off) {
   let r = 0n, s = 0n;
@@ -60,8 +69,6 @@ function isSuspicious(s) {
   const low = s.toLowerCase();
   return SUSPICIOUS_KW.some(k => low.includes(k));
 }
-
-// ✅ NEW: Human-readable cooldown
 function formatCooldown(sec) {
   sec = Number(sec) || 0;
   if (sec <= 0) return '0 Sec';
@@ -77,10 +84,9 @@ function formatCooldown(sec) {
   return parts.join(' ');
 }
 
-// ✅ NEW: Fetch player info (UID / Nickname / Region)
 async function fetchPlayer(access_token) {
   try {
-    const pr = await fetch(`https://api-otrss.garena.com/support/callback/?access_token=${encodeURIComponent(access_token)}`, {
+    const pr = await fetchT(`https://api-otrss.garena.com/support/callback/?access_token=${encodeURIComponent(access_token)}`, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36' },
       redirect: 'follow',
     });
@@ -114,7 +120,7 @@ function httpsRaw(url, opts, body) {
 }
 
 async function garenaPost(ep, form) {
-  const r = await fetch(`${BASE}/${ep}`, {
+  const r = await fetchT(`${BASE}/${ep}`, {
     method: 'POST',
     headers: { 'User-Agent': MSDK_UA, 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
     body: new URLSearchParams(form).toString(),
@@ -123,7 +129,7 @@ async function garenaPost(ep, form) {
 }
 async function garenaGet(ep, params) {
   const qs = new URLSearchParams(params).toString();
-  const r = await fetch(`${BASE}/${ep}?${qs}`, {
+  const r = await fetchT(`${BASE}/${ep}?${qs}`, {
     headers: { 'User-Agent': 'GarenaMSDK/4.0.19P9(Redmi Note 5 ;Android 9;en;US;)' },
   });
   return { status: r.status, data: await r.json().catch(() => ({})) };
@@ -149,13 +155,10 @@ async function playerInfo({ access_token }, res) {
 
 async function bindInfo({ access_token }, res) {
   if (!access_token) return res.json({ success: false, error: 'Access token required' });
-
-  // ✅ Fetch player info in parallel with bind info
   const [player, r] = await Promise.all([
     fetchPlayer(access_token),
     garenaGet('bind:get_bind_info', { app_id: APP_ID, access_token }),
   ]);
-
   if (r.status !== 200) return res.json({ success: false, error: `Garena error ${r.status}`, player });
   const d = r.data;
   return res.json({
@@ -214,19 +217,16 @@ async function createRebind({ access_token, email, identity_token, verifier_toke
 
 async function cancelBind({ access_token }, res) {
   if (!access_token) return res.json({ success: false, error: 'Token required' });
-
-  // ✅ Fetch player + do cancel in parallel
   const [player, r] = await Promise.all([
     fetchPlayer(access_token),
     garenaPost('bind:cancel_request', { app_id: APP_ID, access_token }),
   ]);
-
   return res.json({ success: r.data.result === 0, player, data: r.data });
 }
 
 async function eatToken({ eat_token }, res) {
   if (!eat_token) return res.json({ success: false, error: 'EAT required' });
-  const r = await fetch(`https://api-otrss.garena.com/support/callback/?access_token=${encodeURIComponent(eat_token)}`, {
+  const r = await fetchT(`https://api-otrss.garena.com/support/callback/?access_token=${encodeURIComponent(eat_token)}`, {
     headers: { 'User-Agent': 'Mozilla/5.0' }, redirect: 'follow',
   });
   const u = new URL(r.url);
@@ -245,15 +245,12 @@ async function eatToken({ eat_token }, res) {
 
 async function revokeToken({ access_token }, res) {
   if (!access_token) return res.json({ success: false, error: 'Token required' });
-
-  // ✅ Fetch player info + revoke in parallel
   const [player, r] = await Promise.all([
     fetchPlayer(access_token),
-    fetch(`https://100067.connect.garena.com/oauth/logout?access_token=${encodeURIComponent(access_token)}&refresh_token=${REFRESH_TOKEN}`, {
+    fetchT(`https://100067.connect.garena.com/oauth/logout?access_token=${encodeURIComponent(access_token)}&refresh_token=${REFRESH_TOKEN}`, {
       headers: { 'User-Agent': MSDK_UA, 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
     }),
   ]);
-
   const t = await r.text();
   const ok = r.status === 200 && !t.toLowerCase().includes('error');
   return res.json({ success: ok, player, message: ok ? 'Token revoked' : 'Revoke failed' });
@@ -316,7 +313,7 @@ async function loginHistory({ token }, res) {
 
 async function platformInfo({ access_token }, res) {
   if (!access_token) return res.json({ success: false, error: 'Token required' });
-  const r = await fetch(`https://100067.connect.garena.com/bind/app/platform/info/get?access_token=${encodeURIComponent(access_token)}`, {
+  const r = await fetchT(`https://100067.connect.garena.com/bind/app/platform/info/get?access_token=${encodeURIComponent(access_token)}`, {
     headers: { 'User-Agent': 'GarenaMSDK/4.0.19P9(Redmi Note 5 ;Android 9;en;US;)' },
   });
   const d = await r.json();
@@ -332,7 +329,7 @@ async function platformInfo({ access_token }, res) {
 
 async function toJwt({ access_token }, res) {
   if (!access_token) return res.json({ success: false, error: 'Token required' });
-  const r = await fetch(`https://ff-jwt-gen-api.lovable.app/api/public/token?access_token=${encodeURIComponent(access_token)}`, {
+  const r = await fetchT(`https://ff-jwt-gen-api.lovable.app/api/public/token?access_token=${encodeURIComponent(access_token)}`, {
     headers: { 'Accept': 'application/json' },
   });
   if (r.status !== 200) return res.json({ success: false, error: `API returned ${r.status}` });
