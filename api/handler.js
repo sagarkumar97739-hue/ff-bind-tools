@@ -1,24 +1,74 @@
-// api/handler.js — server-side only. Never sent to browser.
+// api/handler.js — Vercel backend
+// FIX: POST requests now use native https (matches Python TLS) + bot headers exactly
 const https = require('https');
+const zlib = require('zlib');
 const crypto = require('crypto');
 
 const APP_ID = '100067';
 const BASE = 'https://100067.connect.garena.com/game/account_security';
+const HOST = '100067.connect.garena.com';
 const MSDK_UA = 'GarenaMSDK/4.0.30';
 
 const SUSPICIOUS_KW = ['danger', 'papa', 'hack', 'mod', 'crack', 'crk', 't.me/', 'cheat', 'modmenu', 'script', 'keyauth'];
 const CLEAN_DEVICE = 'Xiaomi 2201122G';
 const CLEAN_ARCH = 'ARM64 FP ASIMD AES VMH | 2513 | 6';
-const REFRESH_TOKEN = '1380dcb63ab3a077dc05bdf0b25ba4497c403a5b4eae96d7203010eafa6c83a8';
 const NICK_KEY = Buffer.from('1e5898ccb8dfdd921f9bdea848768b64a201');
 
-// ═══════════ TIMEOUT HELPER ═══════════
+// ═══════════ TIMEOUT WRAPPER (GET requests via fetch) ═══════════
 function fetchT(url, opts = {}, ms = 25000) {
   try {
     return fetch(url, { ...opts, signal: AbortSignal.timeout(ms) });
   } catch {
     return fetch(url, opts);
   }
+}
+
+// ═══════════ NATIVE HTTPS (POST — matches Python TLS fingerprint) ═══════════
+function httpsPostNative(endpoint, formData, ms = 30000) {
+  return new Promise((resolve) => {
+    const body = new URLSearchParams(formData).toString();
+    const req = https.request({
+      hostname: HOST,
+      path: `/game/account_security/${endpoint}`,
+      method: 'POST',
+      headers: {
+        // ✅ Exactly the headers Python `requests` sends by default
+        'User-Agent': MSDK_UA,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept-Encoding': 'gzip, deflate',
+        'Accept': '*/*',
+        'Connection': 'keep-alive',
+        'Content-Length': Buffer.byteLength(body),
+      },
+      timeout: ms,
+    }, (res) => {
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => {
+        let buf = Buffer.concat(chunks);
+        // Handle gzip / deflate
+        const enc = (res.headers['content-encoding'] || '').toLowerCase();
+        try {
+          if (enc.includes('gzip')) buf = zlib.gunzipSync(buf);
+          else if (enc.includes('deflate')) buf = zlib.inflateSync(buf);
+        } catch {}
+
+        let data;
+        try { data = JSON.parse(buf.toString()); }
+        catch {
+          data = { error: 'Non-JSON response', raw: buf.toString().slice(0, 250) };
+        }
+
+        resolve({ status: res.statusCode, data });
+      });
+    });
+
+    req.on('error', (e) => resolve({ status: 0, data: { error: e.message } }));
+    req.on('timeout', () => { req.destroy(); resolve({ status: 0, data: { error: 'timeout' } }); });
+
+    req.write(body);
+    req.end();
+  });
 }
 
 // ═══════════ PROTOBUF PARSER ═══════════
@@ -83,13 +133,16 @@ function formatCooldown(sec) {
   if (s || !parts.length) parts.push(`${s} Sec`);
   return parts.join(' ');
 }
-
 async function fetchPlayer(access_token) {
   try {
-    const pr = await fetchT(`https://api-otrss.garena.com/support/callback/?access_token=${encodeURIComponent(access_token)}`, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36' },
-      redirect: 'follow',
-    });
+    const pr = await fetchT(
+      `https://api-otrss.garena.com/support/callback/?access_token=${encodeURIComponent(access_token)}`,
+      {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36' },
+        redirect: 'follow',
+      },
+      20000
+    );
     const u = new URL(pr.url);
     return {
       uid: u.searchParams.get('account_id') || 'Unknown',
@@ -100,7 +153,16 @@ async function fetchPlayer(access_token) {
     return null;
   }
 }
-
+function decodeNickname(enc) {
+  if (!enc) return 'N/A';
+  try {
+    const raw = Buffer.from(enc, 'base64');
+    const out = Buffer.alloc(raw.length);
+    for (let i = 0; i < raw.length; i++) out[i] = raw[i] ^ NICK_KEY[i % NICK_KEY.length];
+    const s = out.toString('utf8').replace(/\uFFFD/g, '');
+    return s.trim().length > 0 ? s : 'Hidden';
+  } catch { return 'N/A'; }
+}
 function httpsRaw(url, opts, body) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
@@ -118,31 +180,12 @@ function httpsRaw(url, opts, body) {
     req.end();
   });
 }
-
-async function garenaPost(ep, form) {
-  const r = await fetchT(`${BASE}/${ep}`, {
-    method: 'POST',
-    headers: { 'User-Agent': MSDK_UA, 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
-    body: new URLSearchParams(form).toString(),
-  });
-  return { status: r.status, data: await r.json().catch(() => ({})) };
-}
 async function garenaGet(ep, params) {
   const qs = new URLSearchParams(params).toString();
   const r = await fetchT(`${BASE}/${ep}?${qs}`, {
     headers: { 'User-Agent': 'GarenaMSDK/4.0.19P9(Redmi Note 5 ;Android 9;en;US;)' },
   });
   return { status: r.status, data: await r.json().catch(() => ({})) };
-}
-function decodeNickname(enc) {
-  if (!enc) return 'N/A';
-  try {
-    const raw = Buffer.from(enc, 'base64');
-    const out = Buffer.alloc(raw.length);
-    for (let i = 0; i < raw.length; i++) out[i] = raw[i] ^ NICK_KEY[i % NICK_KEY.length];
-    const s = out.toString('utf8').replace(/\uFFFD/g, '');
-    return s.trim().length > 0 ? s : 'Hidden';
-  } catch { return 'N/A'; }
 }
 
 // ═══════════ ACTIONS ═══════════
@@ -176,84 +219,247 @@ async function bindInfo({ access_token }, res) {
   });
 }
 
+// ═══════════ WRITE ACTIONS — use httpsPostNative ═══════════
 async function sendOtp({ access_token, email, locale, region }, res) {
   if (!access_token || !email) return res.json({ success: false, error: 'Token + email required' });
-  const r = await garenaPost('bind:send_otp', { email, locale: locale || 'en_PK', region: region || 'PK', app_id: APP_ID, access_token });
-  return res.json({ success: r.data.result === 0, data: r.data });
+
+  const r = await httpsPostNative('bind:send_otp', {
+    email,
+    locale: locale || 'en_PK',
+    region: region || 'PK',
+    app_id: APP_ID,
+    access_token,
+  });
+
+  if (r.status === 0) {
+    return res.json({ success: false, error: `Network error: ${r.data.error}` });
+  }
+  if (r.status !== 200) {
+    return res.json({
+      success: false,
+      error: `Garena HTTP ${r.status}`,
+      debug: { garena_response: r.data },
+    });
+  }
+
+  const success = r.data.result === 0;
+  return res.json({
+    success,
+    data: success ? r.data : undefined,
+    error: success ? undefined : (r.data.error || `Garena code ${r.data.result}`),
+    debug: success ? undefined : { garena_response: r.data, http_status: r.status },
+  });
 }
 
 async function verifyOtp({ access_token, email, otp }, res) {
   if (!access_token || !email || !otp) return res.json({ success: false, error: 'Token, email, OTP required' });
-  const r = await garenaPost('bind:verify_otp', { app_id: APP_ID, access_token, email, code: otp, otp, type: '1' });
-  return res.json({ success: r.data.result === 0, data: r.data });
+
+  const r = await httpsPostNative('bind:verify_otp', {
+    app_id: APP_ID,
+    access_token,
+    email,
+    code: otp,
+    otp,
+    type: '1',
+  });
+
+  if (r.status !== 200) {
+    return res.json({ success: false, error: `Garena HTTP ${r.status}`, debug: { garena_response: r.data } });
+  }
+
+  const success = r.data.result === 0;
+  return res.json({
+    success,
+    data: success ? r.data : undefined,
+    error: success ? undefined : (r.data.error || `Garena code ${r.data.result}`),
+    debug: success ? undefined : { garena_response: r.data },
+  });
 }
 
 async function verifyIdentity({ access_token, email, otp, security_code }, res) {
   if (!access_token || !email) return res.json({ success: false, error: 'Token + email required' });
-  const fd = { email, app_id: APP_ID, access_token };
-  if (otp) fd.otp = otp;
-  if (security_code) fd.secondary_password = crypto.createHash('sha256').update(security_code).digest('hex');
-  const r = await garenaPost('bind:verify_identity', fd);
-  return res.json({ success: r.data.result === 0, data: r.data });
+
+  const form = { email, app_id: APP_ID, access_token };
+  if (otp) form.otp = otp;
+  if (security_code) form.secondary_password = crypto.createHash('sha256').update(security_code).digest('hex');
+
+  const r = await httpsPostNative('bind:verify_identity', form);
+
+  if (r.status !== 200) {
+    return res.json({ success: false, error: `Garena HTTP ${r.status}`, debug: { garena_response: r.data } });
+  }
+
+  const success = r.data.result === 0;
+  return res.json({
+    success,
+    data: success ? r.data : undefined,
+    error: success ? undefined : (r.data.error || `Garena code ${r.data.result}`),
+    debug: success ? undefined : { garena_response: r.data },
+  });
 }
 
 async function createBind({ access_token, email, verifier_token, security_code }, res) {
   if (!access_token || !email || !verifier_token) return res.json({ success: false, error: 'Missing fields' });
-  const r = await garenaPost('bind:create_bind_request', { email, app_id: APP_ID, access_token, verifier_token, secondary_password: security_code || '' });
-  return res.json({ success: r.data.result === 0, data: r.data });
+
+  const r = await httpsPostNative('bind:create_bind_request', {
+    email,
+    app_id: APP_ID,
+    access_token,
+    verifier_token,
+    secondary_password: security_code || '',
+  });
+
+  if (r.status !== 200) {
+    return res.json({ success: false, error: `Garena HTTP ${r.status}`, debug: { garena_response: r.data } });
+  }
+
+  const success = r.data.result === 0;
+  return res.json({
+    success,
+    data: success ? r.data : undefined,
+    error: success ? undefined : (r.data.error || `Garena code ${r.data.result}`),
+    debug: success ? undefined : { garena_response: r.data },
+  });
 }
 
 async function createUnbind({ access_token, identity_token }, res) {
   if (!access_token || !identity_token) return res.json({ success: false, error: 'Missing tokens' });
-  const r = await garenaPost('bind:create_unbind_request', { app_id: APP_ID, access_token, identity_token });
-  return res.json({ success: r.data.result === 0, data: r.data });
+
+  const r = await httpsPostNative('bind:create_unbind_request', {
+    app_id: APP_ID,
+    access_token,
+    identity_token,
+  });
+
+  if (r.status !== 200) {
+    return res.json({ success: false, error: `Garena HTTP ${r.status}`, debug: { garena_response: r.data } });
+  }
+
+  const success = r.data.result === 0;
+  return res.json({
+    success,
+    data: success ? r.data : undefined,
+    error: success ? undefined : (r.data.error || `Garena code ${r.data.result}`),
+    debug: success ? undefined : { garena_response: r.data },
+  });
 }
 
 async function createRebind({ access_token, email, identity_token, verifier_token }, res) {
-  if (!access_token || !email || !identity_token || !verifier_token) return res.json({ success: false, error: 'Missing fields' });
-  const r = await garenaPost('bind:create_rebind_request', { identity_token, email, app_id: APP_ID, verifier_token, access_token });
-  return res.json({ success: r.data.result === 0, data: r.data });
+  if (!access_token || !email || !identity_token || !verifier_token) {
+    return res.json({ success: false, error: 'Missing fields' });
+  }
+
+  const r = await httpsPostNative('bind:create_rebind_request', {
+    identity_token,
+    email,
+    app_id: APP_ID,
+    verifier_token,
+    access_token,
+  });
+
+  if (r.status !== 200) {
+    return res.json({ success: false, error: `Garena HTTP ${r.status}`, debug: { garena_response: r.data } });
+  }
+
+  const success = r.data.result === 0;
+  return res.json({
+    success,
+    data: success ? r.data : undefined,
+    error: success ? undefined : (r.data.error || `Garena code ${r.data.result}`),
+    debug: success ? undefined : { garena_response: r.data },
+  });
 }
 
 async function cancelBind({ access_token }, res) {
   if (!access_token) return res.json({ success: false, error: 'Token required' });
+
   const [player, r] = await Promise.all([
     fetchPlayer(access_token),
-    garenaPost('bind:cancel_request', { app_id: APP_ID, access_token }),
+    httpsPostNative('bind:cancel_request', { app_id: APP_ID, access_token }),
   ]);
-  return res.json({ success: r.data.result === 0, player, data: r.data });
-}
 
-async function eatToken({ eat_token }, res) {
-  if (!eat_token) return res.json({ success: false, error: 'EAT required' });
-  const r = await fetchT(`https://api-otrss.garena.com/support/callback/?access_token=${encodeURIComponent(eat_token)}`, {
-    headers: { 'User-Agent': 'Mozilla/5.0' }, redirect: 'follow',
-  });
-  const u = new URL(r.url);
-  const a = u.searchParams.get('access_token');
-  if (!a) return res.json({ success: false, error: 'Token invalid or expired' });
+  if (r.status !== 200) {
+    return res.json({ success: false, error: `Garena HTTP ${r.status}`, player, debug: { garena_response: r.data } });
+  }
+
+  const success = r.data.result === 0;
   return res.json({
-    success: true,
-    data: {
-      access_token: a,
-      nickname: decodeURIComponent(u.searchParams.get('nickname') || ''),
-      account_id: u.searchParams.get('account_id') || '',
-      region: u.searchParams.get('region') || '',
-    },
+    success,
+    player,
+    data: success ? r.data : undefined,
+    error: success ? undefined : (r.data.error || `Garena code ${r.data.result}`),
+    debug: success ? undefined : { garena_response: r.data },
   });
 }
 
 async function revokeToken({ access_token }, res) {
   if (!access_token) return res.json({ success: false, error: 'Token required' });
-  const [player, r] = await Promise.all([
-    fetchPlayer(access_token),
-    fetchT(`https://100067.connect.garena.com/oauth/logout?access_token=${encodeURIComponent(access_token)}&refresh_token=${REFRESH_TOKEN}`, {
-      headers: { 'User-Agent': MSDK_UA, 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
-    }),
-  ]);
-  const t = await r.text();
-  const ok = r.status === 200 && !t.toLowerCase().includes('error');
-  return res.json({ success: ok, player, message: ok ? 'Token revoked' : 'Revoke failed' });
+
+  const player = await fetchPlayer(access_token);
+
+  const REFRESH = '1380dcb63ab3a077dc05bdf0b25ba4497c403a5b4eae96d7203010eafa6c83a8';
+
+  // Use native https for this too
+  const result = await new Promise((resolve) => {
+    const url = new URL('https://100067.connect.garena.com/oauth/logout');
+    url.searchParams.set('access_token', access_token);
+    url.searchParams.set('refresh_token', REFRESH);
+
+    const req = https.request({
+      hostname: url.hostname,
+      path: url.pathname + url.search,
+      method: 'GET',
+      headers: {
+        'User-Agent': MSDK_UA,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json',
+      },
+      timeout: 20000,
+    }, (res2) => {
+      const chunks = [];
+      res2.on('data', c => chunks.push(c));
+      res2.on('end', () => {
+        const text = Buffer.concat(chunks).toString();
+        resolve({
+          success: res2.statusCode === 200 && !text.toLowerCase().includes('error'),
+          status: res2.statusCode,
+          text: text.slice(0, 200),
+        });
+      });
+    });
+    req.on('error', (e) => resolve({ success: false, error: e.message }));
+    req.on('timeout', () => { req.destroy(); resolve({ success: false, error: 'timeout' }); });
+    req.end();
+  });
+
+  return res.json({
+    success: result.success,
+    message: result.success ? 'Token revoked' : 'Revoke failed',
+    error: result.success ? undefined : (result.error || `HTTP ${result.status}`),
+    player,
+  });
+}
+
+// ═══════════ READ ACTIONS (unchanged, they already work) ═══════════
+async function platformInfo({ access_token }, res) {
+  if (!access_token) return res.json({ success: false, error: 'Token required' });
+  const r = await fetchT(
+    `https://100067.connect.garena.com/bind/app/platform/info/get?access_token=${encodeURIComponent(access_token)}`,
+    { headers: { 'User-Agent': 'GarenaMSDK/4.0.19P9(Redmi Note 5 ;Android 9;en;US;)' } }
+  );
+  const d = await r.json();
+  const names = {
+    1: 'Garena', 3: 'Facebook', 4: 'Guest', 5: 'VK', 6: 'Huawei', 7: 'Apple',
+    8: 'Google', 10: 'GameCenter / Line', 11: 'X (Twitter)', 13: 'Apple ID',
+    28: 'Line', 35: 'TikTok',
+  };
+  return res.json({
+    success: true,
+    data: {
+      bound: (d.bounded_accounts || []).map(id => names[id] || `Unknown(${id})`),
+      available: (d.available_platforms || []).map(id => names[id] || `Unknown(${id})`),
+    },
+  });
 }
 
 async function loginHistory({ token }, res) {
@@ -262,8 +468,11 @@ async function loginHistory({ token }, res) {
   if (parts.length !== 3) return res.json({ success: false, error: 'Invalid JWT format' });
 
   let payload;
-  try { payload = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString()); }
-  catch { return res.json({ success: false, error: 'Cannot decode JWT' }); }
+  try {
+    payload = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
+  } catch {
+    return res.json({ success: false, error: 'Cannot decode JWT' });
+  }
 
   const region = payload.lock_region || payload.region;
   if (!region) return res.json({ success: false, error: 'No region in JWT' });
@@ -273,7 +482,10 @@ async function loginHistory({ token }, res) {
   if (rUp === 'IND') domain = 'client.ind.freefiremobile.com';
   else if (['BR', 'US', 'NA', 'SAC'].includes(rUp)) domain = 'client.us.freefiremobile.com';
 
-  const raw = Buffer.from('ac74dc5eb016b4ed43774eec3d13e042bd8faa337913efeb6b92ddfbf113c5cd7972e5a9fee97dc9aa8a71270cae1dc9902c91a5eeee312684d4834c003fcf7d83067c9157de749063ed0714b442666c', 'hex');
+  const raw = Buffer.from(
+    'ac74dc5eb016b4ed43774eec3d13e042bd8faa337913efeb6b92ddfbf113c5cd7972e5a9fee97dc9aa8a71270cae1dc9902c91a5eeee312684d4834c003fcf7d83067c9157de749063ed0714b442666c',
+    'hex'
+  );
 
   const resp = await httpsRaw(`https://${domain}/GetLoginHistory`, {
     method: 'POST',
@@ -311,27 +523,13 @@ async function loginHistory({ token }, res) {
   });
 }
 
-async function platformInfo({ access_token }, res) {
-  if (!access_token) return res.json({ success: false, error: 'Token required' });
-  const r = await fetchT(`https://100067.connect.garena.com/bind/app/platform/info/get?access_token=${encodeURIComponent(access_token)}`, {
-    headers: { 'User-Agent': 'GarenaMSDK/4.0.19P9(Redmi Note 5 ;Android 9;en;US;)' },
-  });
-  const d = await r.json();
-  const names = { 1: 'Garena', 3: 'Facebook', 4: 'Guest', 5: 'VK', 6: 'Huawei', 7: 'Apple', 8: 'Google', 10: 'GameCenter / Line', 11: 'X (Twitter)', 13: 'Apple ID', 28: 'Line', 35: 'TikTok' };
-  return res.json({
-    success: true,
-    data: {
-      bound: (d.bounded_accounts || []).map(id => names[id] || `Unknown(${id})`),
-      available: (d.available_platforms || []).map(id => names[id] || `Unknown(${id})`),
-    },
-  });
-}
-
 async function toJwt({ access_token }, res) {
   if (!access_token) return res.json({ success: false, error: 'Token required' });
-  const r = await fetchT(`https://ff-jwt-gen-api.lovable.app/api/public/token?access_token=${encodeURIComponent(access_token)}`, {
-    headers: { 'Accept': 'application/json' },
-  });
+  const r = await fetchT(
+    `https://ff-jwt-gen-api.lovable.app/api/public/token?access_token=${encodeURIComponent(access_token)}`,
+    { headers: { 'Accept': 'application/json' } },
+    20000
+  );
   if (r.status !== 200) return res.json({ success: false, error: `API returned ${r.status}` });
   const d = await r.json();
   if (!d.token) return res.json({ success: false, error: 'No token returned' });
@@ -349,6 +547,27 @@ async function toJwt({ access_token }, res) {
   });
 }
 
+async function eatToken({ eat_token }, res) {
+  if (!eat_token) return res.json({ success: false, error: 'EAT required' });
+  const r = await fetchT(
+    `https://api-otrss.garena.com/support/callback/?access_token=${encodeURIComponent(eat_token)}`,
+    { headers: { 'User-Agent': 'Mozilla/5.0' }, redirect: 'follow' },
+    20000
+  );
+  const u = new URL(r.url);
+  const a = u.searchParams.get('access_token');
+  if (!a) return res.json({ success: false, error: 'Token invalid or expired' });
+  return res.json({
+    success: true,
+    data: {
+      access_token: a,
+      nickname: decodeURIComponent(u.searchParams.get('nickname') || ''),
+      account_id: u.searchParams.get('account_id') || '',
+      region: u.searchParams.get('region') || '',
+    },
+  });
+}
+
 // ═══════════ ROUTER ═══════════
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -359,7 +578,9 @@ module.exports = async function handler(req, res) {
 
   const action = req.query.action;
   let body = req.body;
-  if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = {}; } }
+  if (typeof body === 'string') {
+    try { body = JSON.parse(body); } catch { body = {}; }
+  }
   body = body || {};
 
   try {
@@ -373,11 +594,11 @@ module.exports = async function handler(req, res) {
       case 'create-unbind':   return await createUnbind(body, res);
       case 'create-rebind':   return await createRebind(body, res);
       case 'cancel-bind':     return await cancelBind(body, res);
-      case 'eat-token':       return await eatToken(body, res);
       case 'revoke-token':    return await revokeToken(body, res);
       case 'login-history':   return await loginHistory(body, res);
       case 'platform-info':   return await platformInfo(body, res);
       case 'to-jwt':          return await toJwt(body, res);
+      case 'eat-token':       return await eatToken(body, res);
       default:                return res.status(400).json({ success: false, error: 'Unknown action' });
     }
   } catch (err) {
