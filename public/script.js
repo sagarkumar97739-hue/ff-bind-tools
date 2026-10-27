@@ -97,7 +97,7 @@ overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 function closeModal() { overlay.classList.remove('open'); modalBody.innerHTML = ''; }
 
-// ═══════════ ✅ API HELPER with 60s TIMEOUT ═══════════
+// ═══════════ API HELPER (60s timeout) ═══════════
 async function callApi(action, payload) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 60000);
@@ -116,7 +116,7 @@ async function callApi(action, payload) {
       return { success: false, error: `Server error (HTTP ${r.status})${clean ? ': ' + clean : ''}` };
     }
   } catch (err) {
-    if (err.name === 'AbortError') return { success: false, error: '⏱ Request timed out after 60 seconds. Please try again.' };
+    if (err.name === 'AbortError') return { success: false, error: '⏱ Request timed out after 60 seconds.' };
     return { success: false, error: `Network error: ${err.message}` };
   } finally {
     clearTimeout(timeoutId);
@@ -131,7 +131,16 @@ function submitBtn(text = 'Submit') { return `<button class="btn-primary" id="su
 function loading() { return `<div class="loading">Processing…</div>`; }
 function resultPanel(html, isError = false) { return `<div class="result ${isError ? 'error' : 'success'}">${html}</div>`; }
 
-// ✅ NEW: Validation helper — shakes empty inputs
+// ✅ Rich error panel showing Garena's actual response
+function errorPanel(r, fallbackMsg = 'Failed') {
+  let html = `<b>${r.error || fallbackMsg}</b>`;
+  if (r.debug?.garena_response) {
+    const g = r.debug.garena_response;
+    html += `<br><br><b>Garena response:</b><br><code>${JSON.stringify(g, null, 2)}</code>`;
+  }
+  return resultPanel(html, true);
+}
+
 function validateInputs(ids) {
   let allValid = true;
   let firstInvalid = null;
@@ -140,7 +149,7 @@ function validateInputs(ids) {
     if (!el) return;
     if (!el.value.trim()) {
       el.classList.remove('invalid');
-      void el.offsetWidth; // force reflow to replay animation
+      void el.offsetWidth;
       el.classList.add('invalid');
       if (!firstInvalid) firstInvalid = el;
       allValid = false;
@@ -169,7 +178,6 @@ function stepDots(current, total) {
   }).join('')}</div>`;
 }
 
-// ═══════════ OPEN SERVICE ═══════════
 function openService(id) {
   const svc = SERVICES.find(s => s.id === id);
   modalTitle.textContent = svc.title;
@@ -183,7 +191,6 @@ function openService(id) {
 // ═══════════ HANDLERS ═══════════
 const HANDLERS = {
 
-  // ── 1. Bind Info ──
   'bind-info': {
     render() {
       modalBody.innerHTML = `${field('token', 'Access Token', 'text', 'Paste your access token')}${submitBtn('Check Bind Info')}<div id="output"></div>`;
@@ -193,7 +200,7 @@ const HANDLERS = {
         const out = document.getElementById('output');
         out.innerHTML = loading();
         const r = await callApi('bind-info', { access_token: token });
-        if (!r.success && !r.data) return out.innerHTML = resultPanel(r.error || 'Failed', true);
+        if (!r.success && !r.data) return out.innerHTML = errorPanel(r, 'Failed to fetch');
         const d = r.data || {};
         out.innerHTML = resultPanel(`
           ${playerCard(r.player)}
@@ -207,7 +214,6 @@ const HANDLERS = {
     },
   },
 
-  // ── 2. Bind Email (Token → Player → Email → OTP → Complete) ──
   'bind-email': {
     render() {
       const state = {};
@@ -228,7 +234,7 @@ const HANDLERS = {
             const out = document.getElementById('output');
             out.innerHTML = loading();
             const pInfo = await callApi('player-info', { access_token: state.access_token });
-            if (!pInfo.success) return out.innerHTML = resultPanel(pInfo.error || 'Failed to load player info', true);
+            if (!pInfo.success) return out.innerHTML = errorPanel(pInfo, 'Failed to load player');
             state.player = pInfo.data;
             step = 2;
             draw();
@@ -241,7 +247,7 @@ const HANDLERS = {
             const out = document.getElementById('output');
             out.innerHTML = loading();
             const r = await callApi('send-otp', { access_token: state.access_token, email: state.email });
-            if (!r.success) return out.innerHTML = resultPanel(r.error || 'Failed to send OTP', true);
+            if (!r.success) return out.innerHTML = errorPanel(r, 'Failed to send OTP');
             step = 3;
             draw();
           };
@@ -253,8 +259,8 @@ const HANDLERS = {
             const out = document.getElementById('output');
             out.innerHTML = loading();
             const r = await callApi('verify-otp', { access_token: state.access_token, email: state.email, otp });
-            if (!r.success) return out.innerHTML = resultPanel(r.error || 'Invalid OTP', true);
-            state.verifier_token = r.data.verifier_token || '';
+            if (!r.success) return out.innerHTML = errorPanel(r, 'Invalid OTP');
+            state.verifier_token = (r.data && r.data.verifier_token) || '';
             if (!state.verifier_token) return out.innerHTML = resultPanel('Verifier token not returned', true);
             step = 4;
             draw();
@@ -267,7 +273,7 @@ const HANDLERS = {
             const out = document.getElementById('output');
             out.innerHTML = loading();
             const r = await callApi('create-bind', { access_token: state.access_token, email: state.email, verifier_token: state.verifier_token, security_code: code });
-            out.innerHTML = r.success ? resultPanel('✅ Email bound successfully!') : resultPanel(r.error || 'Bind failed', true);
+            out.innerHTML = r.success ? resultPanel('✅ Email bound successfully!') : errorPanel(r, 'Bind failed');
           };
         }
       };
@@ -275,7 +281,6 @@ const HANDLERS = {
     },
   },
 
-  // ── 3. Unbind Email (Token → Player → Email → OTP → Complete) ──
   'unbind-email': {
     render() {
       const state = {};
@@ -296,7 +301,7 @@ const HANDLERS = {
             const out = document.getElementById('output');
             out.innerHTML = loading();
             const pInfo = await callApi('player-info', { access_token: state.access_token });
-            if (!pInfo.success) return out.innerHTML = resultPanel(pInfo.error || 'Failed to load player info', true);
+            if (!pInfo.success) return out.innerHTML = errorPanel(pInfo, 'Failed to load player');
             state.player = pInfo.data;
             step = 2;
             draw();
@@ -309,7 +314,7 @@ const HANDLERS = {
             const out = document.getElementById('output');
             out.innerHTML = loading();
             const r = await callApi('send-otp', { access_token: state.access_token, email: state.email });
-            if (!r.success) return out.innerHTML = resultPanel(r.error || 'Failed to send OTP', true);
+            if (!r.success) return out.innerHTML = errorPanel(r, 'Failed to send OTP');
             step = 3;
             draw();
           };
@@ -321,8 +326,8 @@ const HANDLERS = {
             const out = document.getElementById('output');
             out.innerHTML = loading();
             const r = await callApi('verify-identity', { access_token: state.access_token, email: state.email, otp });
-            if (!r.success) return out.innerHTML = resultPanel(r.error || 'Verification failed', true);
-            state.identity_token = r.data.identity_token || '';
+            if (!r.success) return out.innerHTML = errorPanel(r, 'Verification failed');
+            state.identity_token = (r.data && r.data.identity_token) || '';
             if (!state.identity_token) return out.innerHTML = resultPanel('No identity token returned', true);
             step = 4;
             draw();
@@ -333,7 +338,7 @@ const HANDLERS = {
             const out = document.getElementById('output');
             out.innerHTML = loading();
             const r = await callApi('create-unbind', { access_token: state.access_token, identity_token: state.identity_token });
-            out.innerHTML = r.success ? resultPanel('✅ Email unbound successfully!') : resultPanel(r.error || 'Unbind failed', true);
+            out.innerHTML = r.success ? resultPanel('✅ Email unbound successfully!') : errorPanel(r, 'Unbind failed');
           };
         }
       };
@@ -341,7 +346,6 @@ const HANDLERS = {
     },
   },
 
-  // ── 4. Change Email (Token → Player → Old Email → OTP → New Email → OTP → Complete) ──
   'change-email': {
     render() {
       const state = {};
@@ -362,7 +366,7 @@ const HANDLERS = {
             const out = document.getElementById('output');
             out.innerHTML = loading();
             const pInfo = await callApi('player-info', { access_token: state.access_token });
-            if (!pInfo.success) return out.innerHTML = resultPanel(pInfo.error || 'Failed to load player info', true);
+            if (!pInfo.success) return out.innerHTML = errorPanel(pInfo, 'Failed to load player');
             state.player = pInfo.data;
             step = 2;
             draw();
@@ -375,7 +379,7 @@ const HANDLERS = {
             const out = document.getElementById('output');
             out.innerHTML = loading();
             const r = await callApi('send-otp', { access_token: state.access_token, email: state.old_email });
-            if (!r.success) return out.innerHTML = resultPanel(r.error || 'Failed to send OTP', true);
+            if (!r.success) return out.innerHTML = errorPanel(r, 'Failed to send OTP');
             step = 3;
             draw();
           };
@@ -387,8 +391,8 @@ const HANDLERS = {
             const out = document.getElementById('output');
             out.innerHTML = loading();
             const r = await callApi('verify-identity', { access_token: state.access_token, email: state.old_email, otp });
-            if (!r.success) return out.innerHTML = resultPanel(r.error || 'Verification failed', true);
-            state.identity_token = r.data.identity_token || '';
+            if (!r.success) return out.innerHTML = errorPanel(r, 'Verification failed');
+            state.identity_token = (r.data && r.data.identity_token) || '';
             if (!state.identity_token) return out.innerHTML = resultPanel('No identity token returned', true);
             step = 4;
             draw();
@@ -401,7 +405,7 @@ const HANDLERS = {
             const out = document.getElementById('output');
             out.innerHTML = loading();
             const r = await callApi('send-otp', { access_token: state.access_token, email: state.new_email });
-            if (!r.success) return out.innerHTML = resultPanel(r.error || 'Failed to send OTP', true);
+            if (!r.success) return out.innerHTML = errorPanel(r, 'Failed to send OTP');
             step = 5;
             draw();
           };
@@ -413,8 +417,8 @@ const HANDLERS = {
             const out = document.getElementById('output');
             out.innerHTML = loading();
             const r = await callApi('verify-otp', { access_token: state.access_token, email: state.new_email, otp });
-            if (!r.success) return out.innerHTML = resultPanel(r.error || 'Invalid OTP', true);
-            state.verifier_token = r.data.verifier_token || '';
+            if (!r.success) return out.innerHTML = errorPanel(r, 'Invalid OTP');
+            state.verifier_token = (r.data && r.data.verifier_token) || '';
             if (!state.verifier_token) return out.innerHTML = resultPanel('No verifier token returned', true);
             step = 6;
             draw();
@@ -425,7 +429,7 @@ const HANDLERS = {
             const out = document.getElementById('output');
             out.innerHTML = loading();
             const r = await callApi('create-rebind', { access_token: state.access_token, email: state.new_email, identity_token: state.identity_token, verifier_token: state.verifier_token });
-            out.innerHTML = r.success ? resultPanel('✅ Email changed successfully!') : resultPanel(r.error || 'Failed', true);
+            out.innerHTML = r.success ? resultPanel('✅ Email changed successfully!') : errorPanel(r, 'Change failed');
           };
         }
       };
@@ -433,7 +437,6 @@ const HANDLERS = {
     },
   },
 
-  // ── 5. Cancel Pending ──
   'cancel-bind': {
     render() {
       modalBody.innerHTML = `${field('token','Access Token','text','Paste your access token')}${submitBtn('Cancel Pending Request')}<div id="output"></div>`;
@@ -447,12 +450,11 @@ const HANDLERS = {
         if (r.player) html += playerCard(r.player);
         if (r.success) html += `<div style="color:var(--emerald);font-weight:600">✅ Pending request cancelled!</div>`;
         else html += `<div style="color:var(--crimson);font-weight:600">${r.error || 'Failed'}</div>`;
-        out.innerHTML = resultPanel(html);
+        out.innerHTML = resultPanel(html, !r.success);
       };
     },
   },
 
-  // ── 6. EAT → Token ──
   'eat-token': {
     render() {
       modalBody.innerHTML = `${field('eat','EAT Token or Full URL','text','Paste EAT token or URL')}${submitBtn('Convert to Access Token')}<div id="output"></div>`;
@@ -466,7 +468,7 @@ const HANDLERS = {
         const out = document.getElementById('output');
         out.innerHTML = loading();
         const r = await callApi('eat-token', { eat_token: eat });
-        if (!r.success) return out.innerHTML = resultPanel(r.error || 'Failed', true);
+        if (!r.success) return out.innerHTML = errorPanel(r, 'Failed');
         out.innerHTML = resultPanel(`
           ${playerCard({ uid: r.data.account_id, nickname: r.data.nickname, region: r.data.region })}
           <div class="kv"><span>Access Token</span><span style="font-size:11px">${r.data.access_token}</span></div>`);
@@ -474,7 +476,6 @@ const HANDLERS = {
     },
   },
 
-  // ── 7. Revoke Token ──
   'revoke-token': {
     render() {
       modalBody.innerHTML = `${field('token','Access Token to Revoke','text','Paste token to revoke')}${submitBtn('Revoke Token')}<div id="output"></div>`;
@@ -488,12 +489,11 @@ const HANDLERS = {
         if (r.player) html += playerCard(r.player);
         if (r.success) html += `<div style="color:var(--emerald);font-weight:600">✅ Token revoked successfully!</div>`;
         else html += `<div style="color:var(--crimson);font-weight:600">${r.error || r.message || 'Failed'}</div>`;
-        out.innerHTML = resultPanel(html);
+        out.innerHTML = resultPanel(html, !r.success);
       };
     },
   },
 
-  // ── 8. Login History ──
   'login-history': {
     render() {
       modalBody.innerHTML = `${field('token','JWT Token','text','Use "Access → JWT" if needed')}${submitBtn('Fetch Login History')}<div id="output"></div>`;
@@ -503,7 +503,7 @@ const HANDLERS = {
         const out = document.getElementById('output');
         out.innerHTML = loading();
         const r = await callApi('login-history', { token });
-        if (!r.success) return out.innerHTML = resultPanel(r.error || 'Failed', true);
+        if (!r.success) return out.innerHTML = errorPanel(r, 'Failed');
         const d = r.data;
         let html = `
           ${playerCard({ uid: d.account_id, nickname: d.nickname, region: d.region })}
@@ -526,7 +526,6 @@ const HANDLERS = {
     },
   },
 
-  // ── 9. Platform Info ──
   'platform-info': {
     render() {
       modalBody.innerHTML = `${field('token','Access Token','text','Paste your access token')}${submitBtn('Check Platforms')}<div id="output"></div>`;
@@ -536,7 +535,7 @@ const HANDLERS = {
         const out = document.getElementById('output');
         out.innerHTML = loading();
         const r = await callApi('platform-info', { access_token: token });
-        if (!r.success) return out.innerHTML = resultPanel(r.error || 'Failed', true);
+        if (!r.success) return out.innerHTML = errorPanel(r, 'Failed');
         const d = r.data;
         out.innerHTML = resultPanel(`
           <div style="margin-bottom:12px"><strong>Bound Platforms:</strong></div>
@@ -547,7 +546,6 @@ const HANDLERS = {
     },
   },
 
-  // ── 10. Access → JWT ──
   'to-jwt': {
     render() {
       modalBody.innerHTML = `${field('token','Access Token','text','Paste your access token')}${submitBtn('Generate JWT')}<div id="output"></div>`;
@@ -557,7 +555,7 @@ const HANDLERS = {
         const out = document.getElementById('output');
         out.innerHTML = loading();
         const r = await callApi('to-jwt', { access_token: token });
-        if (!r.success) return out.innerHTML = resultPanel(r.error || 'Failed', true);
+        if (!r.success) return out.innerHTML = errorPanel(r, 'Failed');
         const d = r.data;
         out.innerHTML = resultPanel(`
           ${playerCard({ uid: d.account_id, nickname: d.nickname, region: d.region })}
